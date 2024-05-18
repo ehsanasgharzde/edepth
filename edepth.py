@@ -13,7 +13,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.transforms as transforms
 import torch.optim.lr_scheduler  as Scheduler
-import torch.functional as F
+import torch.nn.functional as F
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
@@ -22,6 +22,9 @@ from alive_progress import alive_bar
 
 import time
 import random
+
+import warnings
+warnings.filterwarnings("ignore")
 
 
 class edepth(nn.Module):
@@ -56,25 +59,225 @@ class edepth(nn.Module):
     __contact__ = "https://ehsanasgharzadeh.asg@gmail.com"
     __version__ = "0.0.1"
 
+    class _DenseBlock(nn.Module):
+        """
+        DenseBlock module consisting of Batch Normalization, ReLU, and Convolution layers.
+        """
+
+        def __init__(self, inputChannels, growthRate):
+            """
+            Initializes the DenseBlock.
+
+            Args:
+                inputChannels (int): Number of input channels.
+                growthRate (int): Growth rate for the DenseBlock.
+            """
+            super(edepth._DenseBlock, self).__init__()
+            self.batchNormI = nn.BatchNorm2d(inputChannels)
+            self.convolutionI = nn.Conv2d(inputChannels, growthRate, kernel_size=1)
+            self.batchNormII = nn.BatchNorm2d(growthRate)
+            self.convolutionII = nn.Conv2d(growthRate, growthRate, kernel_size=3, padding=1)
+
+        def forward(self, x):
+            """
+            Forward pass through the DenseBlock.
+
+            Args:
+                x (torch.Tensor): Input tensor.
+
+            Returns:
+                torch.Tensor: Output tensor after passing through the DenseBlock.
+            """
+            output = self.convolutionI(self.batchNormI(x))
+            output = self.convolutionII(self.batchNormII(output))
+            output = torch.cat([x, output], 1)
+            return output
+
+    class _TransitionLayer(nn.Module):
+        """
+        TransitionLayer module consisting of Convolution and Max Pooling layers.
+        """
+
+        def __init__(self, inputChannels, outputChannels):
+            """
+            Initializes the TransitionLayer.
+
+            Args:
+                inputChannels (int): Number of input channels.
+                outputChannels (int): Number of output channels.
+            """
+            super(edepth._TransitionLayer, self).__init__()
+            self.convolution = nn.Conv2d(inputChannels, outputChannels, kernel_size=1)
+            self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        def forward(self, x):
+            """
+            Forward pass through the TransitionLayer.
+
+            Args:
+                x (torch.Tensor): Input tensor.
+
+            Returns:
+                torch.Tensor: Output tensor after passing through the TransitionLayer.
+            """
+            output = self.convolution(x)
+            output = self.pool(output)
+            return output
+
+    class _UpSamplingI(nn.Module):
+        """
+        UpSamplingI module consisting of Batch Normalization, ReLU, Convolution, and Tanh layers.
+        """
+
+        def __init__(self, inputChannels, outputChannels):
+            """
+            Initializes the UpSamplingI.
+
+            Args:
+                inputChannels (int): Number of input channels.
+                outputChannels (int): Number of output channels.
+            """
+            super(edepth._UpSamplingI, self).__init__()
+            self.batchNorm = nn.BatchNorm2d(inputChannels)
+            self.convolution = nn.Conv2d(inputChannels, outputChannels, kernel_size=3, padding=1)
+            self.tanh = nn.Tanh()
+
+        def forward(self, x):
+            """
+            Forward pass through the UpSamplingI.
+
+            Args:
+                x (torch.Tensor): Input tensor.
+
+            Returns:
+                torch.Tensor: Output tensor after passing through the UpSamplingI.
+            """
+            output = self.convolution(self.batchNorm(x))
+            output = self.tanh(output)
+            return output
+
+    class _UpSamplingII(nn.Module):
+        """
+        UpSamplingII module consisting of ReLU and Convolution layers.
+        """
+
+        def __init__(self, inputChannels, outputChannels):
+            """
+            Initializes the UpSamplingII.
+
+            Args:
+                inputChannels (int): Number of input channels.
+                outputChannels (int): Number of output channels.
+            """
+            super(edepth._UpSamplingII, self).__init__()
+            self.convolutionI = nn.Conv2d(inputChannels, outputChannels, kernel_size=2, stride=2)
+            self.convolutionII = nn.Conv2d(outputChannels, outputChannels, kernel_size=3, padding=1)
+
+        def forward(self, x):
+            """
+            Forward pass through the UpSamplingII.
+
+            Args:
+                x (torch.Tensor): Input tensor.
+
+            Returns:
+                torch.Tensor: Output tensor after passing through the UpSamplingII.
+            """
+            output = self.convolutionI(nn.functional.relu(x))
+            output = self.convolutionII(nn.functional.relu(output))
+            return output
+
+    class _Encoder(nn.Module):
+        """
+        Encoder module consisting of initial convolution, DenseBlocks, and TransitionLayers.
+        """
+
+        def __init__(self, inputChannels, growthRate):
+            """
+            Initializes the Encoder.
+
+            Args:
+                inputChannels (int): Number of input channels.
+                growthRate (int): Growth rate for the DenseBlocks.
+            """
+            super(edepth._Encoder, self).__init__()
+            self.initialConvolution = nn.Conv2d(inputChannels, growthRate, kernel_size=5, padding=2)
+            self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+
+            numLayers = 4
+            self.denseBlocks = nn.ModuleList()
+            self.transitionLayers = nn.ModuleList()
+
+            numChannels = growthRate
+            for i in range(numLayers):
+                self.denseBlocks.append(edepth._DenseBlock(numChannels, growthRate))
+                numChannels += growthRate
+                if i != numLayers - 1:
+                    self.transitionLayers.append(edepth._TransitionLayer(numChannels, numChannels // 2))
+                    numChannels = numChannels // 2
+
+        def forward(self, x):
+            """
+            Forward pass through the Encoder.
+
+            Args:
+                x (torch.Tensor): Input tensor.
+
+            Returns:
+                torch.Tensor: Output tensor after passing through the Encoder.
+            """
+            output = self.initialConvolution(x)
+            output = self.pool(output)
+            for i, block in enumerate(self.denseBlocks):
+                output = block(output)
+                if i != len(self.denseBlocks) - 1:
+                    output = self.transitionLayers[i](output)
+            return output
+
+    class _Decoder(nn.Module):
+        """
+        Decoder module consisting of multiple UpSampling layers to reconstruct the depth map.
+        """
+
+        def __init__(self, inputChannels):
+            """
+            Initializes the Decoder.
+
+            Args:
+                inputChannels (int): Number of input channels.
+            """
+            super(edepth._Decoder, self).__init__()
+            self.upSamplingI = edepth._UpSamplingII(inputChannels, inputChannels // 2)
+            self.upSamplingII = edepth._UpSamplingII(inputChannels // 2, inputChannels // 4)
+            self.upSamplingIII = edepth._UpSamplingII(inputChannels // 4, inputChannels // 8)
+            self.upSamplingIV = edepth._UpSamplingI(inputChannels // 8, 1)
+
+        def forward(self, x):
+            """
+            Forward pass through the Decoder.
+
+            Args:
+                x (torch.Tensor): Input tensor.
+
+            Returns:
+                torch.Tensor: Output tensor after passing through the Decoder.
+            """
+            output = self.upSamplingI(x)
+            output = self.upSamplingII(output)
+            output = self.upSamplingIII(output)
+            output = self.upSamplingIV(output)
+            return output
+    
     def __init__(self, 
                  optimizer: Any = None,
                  activation: Any = None,
                  loss: Any = None,
                  scheduler: Any = None,
                  dropout: Any = None,
-                 numLayers: int = 5, 
-                 kernelSize: int = 3, 
-                 numKernels: tuple | int = [16, 32, 64, 128, 256], 
                  inputChannels: int = 3,
-                 outputChannels: int = 1,
-                 strideLength: int = 1, 
-                 poolSize: int = 2, 
-                 numNeurons: int = 1024, 
+                 growthRate: int = 32,
                  minDepth: float = None,
-                 maxDepth: float = None,
-                 linBiasI: bool = True,
-                 linBiasII: bool = True,
-                 padding: int = 1) -> None:
+                 maxDepth: float = None) -> None:
         """
         Initializes the depth estimation model.
 
@@ -96,24 +299,9 @@ class edepth(nn.Module):
         """
         super(edepth, self).__init__()
 
-        self.numLayers = numLayers
-        self.kernelSize = kernelSize
-        self.numKernels = numKernels
-        self.strideLength = strideLength
-        self.poolSize = poolSize
-        self.numNeurons = numNeurons
-
-        self.encoder = self.__buildEncoder(numLayers, kernelSize, numKernels, inputChannels)
-        self.decoder = self.__buildDecoder(numLayers, kernelSize, numKernels[-1], outputChannels)
-        self.adaptivePool = nn.AdaptiveAvgPool2d((7, 7))
-
-
-        self.convI = nn.Conv2d(in_channels=inputChannels, out_channels=outputChannels, kernel_size=kernelSize, padding=padding)
-        self.convII = nn.Conv2d(in_channels=outputChannels, out_channels=outputChannels * 2, kernel_size=kernelSize, padding=padding)
-        self.convIII = nn.Conv2d(in_channels=outputChannels * 2, out_channels=outputChannels * 4, kernel_size=kernelSize, padding=padding)
-        
-        self.fullyConnectedLayersI = nn.Linear(7 * 7 * outputChannels * 4, numNeurons, bias=linBiasI)
-        self.fullyConnectedLayersII = nn.Linear(numNeurons, 1, bias=linBiasII)
+        self.encoder = edepth._Encoder(inputChannels, growthRate)
+        self.adaptivePool = nn.AdaptiveAvgPool2d((7, 7)) 
+        self.decoder = edepth._Decoder(growthRate * 2)
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.optimizer = optimizer
@@ -174,40 +362,14 @@ class edepth(nn.Module):
 
         Raises:
             ValueError: If the input tensor does not have the expected shape.
-
-        Note:
-            The input tensor should have the expected shape (batchSize, channels, height, width).
-            - batchSize: Number of samples in the batch.
-            - channels: Number of input channels (e.g., 3 for RGB images).
-            - height: Height of the input images.
-            - width: Width of the input images.
         """
         if x.dim() != 4:
-            raise ValueError("ValueError | Input tensor must have shape (batchSize, channels, height, width).")
+            raise ValueError("Input tensor must have shape (batchSize, channels, height, width).")
 
         features = self.encoder(x)
-        pooledFeatures = self.adaptivePool(features)
+        output = self.decoder(features)
         
-        convIoutput = self.convI(pooledFeatures)
-        convIIoutput = self.convII(convIoutput)
-        convIIIoutput = self.convIII(convIIoutput)
-        
-        flattenedFeatures = convIIIoutput.view(convIIIoutput.size(0), -1)
-        
-        fullyConnectedIoutput = self.activation(self.fullyConnectedLayersI(flattenedFeatures))
-        if self.dropout is not None:
-            fullyConnectedIoutput = self.dropout(fullyConnectedIoutput)
-        fullyConnectedIIoutput = self.fullyConnectedLayersII(fullyConnectedIoutput)
-
-        batchSize = x.size(0)
-        outputHeight = x.size(2)
-        outputWidth = x.size(3)
-        outputChannels = 1 
-
-        output = fullyConnectedIIoutput.view(batchSize, outputChannels, outputHeight, outputWidth)
-
         return output
-
 
     def esave(self, 
               filepath: str, 
@@ -343,59 +505,6 @@ class edepth(nn.Module):
 
         except Exception as e:
             raise RuntimeError(f"RuntimeError | Error during training:\n{str(e)}")
-
-    def etest(self, 
-            testset: Dataset,  
-            batchSize: int = 32, 
-            visualize: bool = False, 
-            shuffle: bool = False) -> Tuple[float, float, List[int], List[int]]:
-        """
-        Evaluate the depth estimation model on a test dataset.
-
-        Args:
-            `testset` (torch.utils.data.Dataset): The test dataset.
-            `batchSize` (int, optional): The batch size for evaluation. Default is 32.
-            `visualize` (bool, optional): Whether to visualize predictions. Default is False.
-            `shuffle` (bool, optional): Whether to shuffle the test data. Default is False.
-
-        Returns:
-            `Tuple[float, float, List[int], List[int]]`: A tuple containing the average loss, 
-                accuracy, list of all predicted labels, and list of all true labels.
-        """
-        loader = DataLoader(testset, batch_size=batchSize, shuffle=shuffle)
-        self.eval()
-        totalLoss = 0.0
-        totalCorrect = 0
-        allPredictions = []
-        allLabels = []
-
-        with torch.no_grad():
-            for inputs, labels in loader:
-                inputs = inputs.to(self.device)
-                labels = labels.to(self.device)
-                outputs = self(inputs)
-                loss = self.loss(outputs, labels)
-                totalLoss += loss.item() * inputs.size(0)
-                _, predicted = torch.max(outputs.data, 1)
-                totalCorrect += (predicted == labels).sum().item()
-                allPredictions.extend(predicted.cpu().numpy())
-                allLabels.extend(labels.cpu().numpy())
-
-                if visualize:
-                    sampleIndex = np.random.randint(0, len(inputs))
-                    inputImage = inputs[sampleIndex].cpu().numpy().transpose((1, 2, 0))
-                    trueLabel = labels[sampleIndex].item()
-                    predictedLabel = predicted[sampleIndex].item()
-
-                    plt.imshow(inputImage)
-                    plt.title(f'True Label: {trueLabel} | Predicted Label: {predictedLabel}')
-                    plt.show()
-
-        averageLoss = totalLoss / len(testset)
-        accuracy = totalCorrect / len(testset) * 100
-        print(f'Test Loss: {averageLoss:.4f} | Test Accuracy: {accuracy:.2f}%')
-
-        return averageLoss, accuracy, allPredictions, allLabels
 
     def egenerate(self,
                 source: str,
@@ -547,7 +656,7 @@ class edepth(nn.Module):
                     
                     epochLoss += loss.item()
                     _, predicted = torch.max(outputs, 1)
-                    epochCorrect += (predicted == labels).sum().item()
+                    epochCorrect += (predicted == torch.mean(labels, dim=1, keepdim=True)).sum().item()
                     epochTotal += labels.size(0)
                     
                     bar()
@@ -593,7 +702,7 @@ class edepth(nn.Module):
                         
                         epochLoss += loss.item()
                         _, predicted = torch.max(outputs, 1)
-                        epochCorrect += (predicted == labels).sum().item()
+                        epochCorrect += (predicted == torch.mean(labels, dim=1, keepdim=True)).sum().item()
                         epochTotal += labels.size(0)
                         
                         bar()
@@ -609,59 +718,6 @@ class edepth(nn.Module):
                 print("WARNING: CUDA out of memory during evaluation. Consider reducing batch size or model size, or using smaller inputs.")
             else:
                 raise e
-
-    def __buildEncoder(self, 
-                    numLayers: int, 
-                    kernelSize: int, 
-                    numKernels: int, 
-                    inputChannels: int) -> torch.nn.Sequential:
-        """
-        Build the encoder layers.
-
-        Args:
-            `numLayers` (int): Number of convolutional layers.
-            `kernelSize` (int): Kernel size for convolutional layers.
-            `numKernels` (int): Number of output channels for convolutional layers.
-            `inputChannels` (int): Number of input channels for the first convolutional layer.
-
-        Returns:
-            `torch.nn.Sequential`: Sequential model representing the encoder layers.
-        """
-        encoderLayers = []
-        for i in range(numLayers):
-            encoderLayers.append(nn.Conv2d(inputChannels, numKernels[i], kernelSize, stride=2, padding=1))
-            encoderLayers.append(nn.ReLU(inplace=True))
-            encoderLayers.append(nn.BatchNorm2d(numKernels[i]))
-            inputChannels = numKernels[i]
-
-        return nn.Sequential(*encoderLayers)
-
-    def __buildDecoder(self, 
-                       numLayers: int, 
-                       kernelSize: int, 
-                       inputChannels: int, 
-                       outputChannels: int) -> torch.nn.Sequential:
-        """
-        Build the decoder layers.
-
-        Args:
-            `numLayers` (int): Number of convolutional layers.
-            `kernelSize` (int): Kernel size for convolutional layers.
-            `numKernels` (int): Number of output channels for convolutional layers.
-            `inputChannels` (int): Number of input channels for the first convolutional layer.
-
-        Returns:
-            `torch.nn.Sequential`: Sequential model representing the decoder layers.
-        """
-        decoderLayers = []
-        for _ in range(numLayers - 1):
-            decoderLayers.append(nn.ConvTranspose2d(inputChannels, inputChannels // 2, kernelSize, stride=2, padding=1, output_padding=1))
-            decoderLayers.append(nn.ReLU(inplace=True))
-            decoderLayers.append(nn.BatchNorm2d(inputChannels // 2))
-            inputChannels //= 2
-
-        decoderLayers.append(nn.ConvTranspose2d(inputChannels, outputChannels, kernelSize, stride=2, padding=1, output_padding=1))
-        return nn.Sequential(*decoderLayers)
 
     def __processImage(self, 
                        image: Any, 

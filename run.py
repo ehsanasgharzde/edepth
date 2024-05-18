@@ -50,8 +50,6 @@ class Dataset(torch.utils.data.Dataset):
         entry = self.transform(entry)
         target = self.transform(target)
 
-        print(target.shape)
-
         return entry, target
     
 dataDir = r"/home/ehsanasgharzde/Desktop/Projects/depth/dataset.csv"
@@ -65,4 +63,4 @@ validationset = Dataset(validate, 224, 224)
 model = edepth()
 
 if __name__ == "__main__":
-    model.etrain(trainset, validationset, 50, batchSize=4)
+    model.etrain(trainset, validationset, 50, batchSize=32)
