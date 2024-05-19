@@ -1,0 +1,12 @@
+# Image processing and visualization
+opencv-python-headless>=4.5.5.64
+Pillow>=8.4.0
+numpy>=1.21.2
+matplotlib>=3.4.3
+
+# PyTorch and related packages
+torch>=1.10.0
+torchvision>=0.11.1
+
+# Progress bar
+alive-progress>=2.3.1
