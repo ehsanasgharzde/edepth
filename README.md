@@ -65,11 +65,11 @@ estimation time: 0.1276703309995355 seconds
 
 ![Sample 2 Colorized Depth Map](output/colorized/1500938202405080311264197_pred.jpg)
 *Output Colorized Depth Map*
-estimation time: 0.1332030850026058 seconds
+estimation time: 0.14070451999577926 seconds
 
 ![Sample 2 Grayscale Depth Map](output/grayscale/1500938202405080311264197_pred.jpg)
 *Output Grayscale Depth Map*
-estimation time: 0.14070451999577926 seconds
+estimation time: 0.1332030850026058 seconds
 
 ### Video Samples
 
