@@ -625,7 +625,8 @@ class edepth(nn.Module):
                 cv2.destroyAllWindows()
 
             if save:
-                outputPath = os.path.join(outputDir, f'{outputFilename}.{outputFormat}')
+                
+                outputPath = os.path.join(outputDir, 'colorized', f'{outputFilename}.{outputFormat}') if colormap == 'colorized' else os.path.join(outputDir, 'grayscale', f'{outputFilename}.{outputFormat}')
                 cv2.imwrite(outputPath, depthMap)
         
         elif source == 'video':
@@ -636,7 +637,7 @@ class edepth(nn.Module):
 
             out = None
             if save:
-                outputPath = os.path.join(outputDir, f'{outputFilename}.avi')
+                outputPath = os.path.join(outputDir, 'video', f'{outputFilename}.avi')
                 out = cv2.VideoWriter(outputPath, cv2.VideoWriter_fourcc(*'DIVX'), fps, (frameWidth, frameHeight))
 
             while True:
