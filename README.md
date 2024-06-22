@@ -78,7 +78,7 @@ edepth can process video files and generate depth maps for each frame. Here are 
 1. Original Video: [Link to Original Video](input/18839247834792849281913.mp4)
 2. Depth Map Video: [Link to Depth Map Video](output/video/18839247834792849281913.avi)
 
-![Screen Record How edepth is Doing]()
+![Screen Record How edepth is Doing](output/screen-record.gif)
 
 ### Performance Metrics
 
