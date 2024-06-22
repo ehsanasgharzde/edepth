@@ -1,3 +1,6 @@
+**_To aonaran, who is learning to perceive the profound depths of the world._**
+_from e_
+
 # edepth: Depth Estimation Model
 
 ## Overview
@@ -11,7 +14,6 @@ The edepth model architecture is inspired by DenseNet and U-Net architectures, w
 ### Encoder
 The encoder extracts features from the input data using multiple dense blocks, each containing convolutional layers with shared feature maps concatenated across layers. Transition layers follow dense blocks to reduce the number of channels and spatial dimensions.
 
-
 ### Fully Connected Layers
 Between the encoder and decoder, the model includes fully connected layers to process the features:
 - `fullyConnectedI`: Linear layer transforming the encoder output to a fixed-size vector.
@@ -19,7 +21,6 @@ Between the encoder and decoder, the model includes fully connected layers to pr
 
 ### Decoder
 The decoder reconstructs the depth map from the encoded features using upsampling layers.
-
 
 ## Test Train Details
 
