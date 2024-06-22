@@ -1,8 +1,7 @@
-import cv2
 import os
-import numpy as np
-import matplotlib.pyplot as plt
+import time
 
+import cv2
 from PIL import Image
 
 from typing import Any, Optional, Union
@@ -10,18 +9,17 @@ from typing import List, Tuple, Dict
 
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torchvision.transforms as transforms
 import torch.optim.lr_scheduler  as Scheduler
-import torch.nn.functional as F
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 
+import swats
+
 from alive_progress import alive_bar
 
-import time
-import random
+import numpy as np
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -29,65 +27,135 @@ warnings.filterwarnings("ignore")
 
 class edepth(nn.Module):
     """
-    Depth Estimation Convolutional Neural Network
+    Neural network model for depth estimation using an encoder-decoder architecture.
 
-    edepth is a convolutional neural network designed for estimating depth maps from input images.
-    It employs an encoder-decoder architecture, where the encoder extracts features from the input
-    image, and the decoder reconstructs the depth map from these features.
+    This class defines a neural network (`edepth`) designed specifically for depth estimation tasks.
+    It utilizes an encoder-decoder architecture, commonly used in computer vision tasks, to predict depth maps
+    from input images.
 
-    Inputs:
-        - Input images: RGB images with shape (batchSize, channels, height, width).
+    The model consists of the following components:
+    - Encoder: Extracts hierarchical features from input images to capture contextual information.
+    - Fully Connected Layers: Adapt the output of the encoder for input into the decoder and vice versa.
+    - Decoder: Upsamples the encoded features to generate high-resolution depth maps.
 
-    Outputs:
-        - Depth maps: Estimated depth maps with shape (batchSize, height, width).
+    Attributes
+    ----------
+    __author__ : Ehsan Asgharzadeh
+    __copyright__ : Copyright (C) 2024 edepth
+    __license__ : https://ehsanasgharzde.ir
+    __contact__ : https://ehsanasgharzadeh.asg@gmail.com
+    __date__ : 2024 Jun 22
+    __version__ : 1.0.1
 
-    Usage:
-        To use the edepth model, create an instance of the class and call it with input images.
-        You can also train the model, evaluate its performance, generate depth maps from images
-        or videos, and visualize the results.
+    Parameters
+    ----------
+    optimizer : Any, optional
+        Optimizer for model training (default is None, which initializes SWATS optimizer with lr=0.0001).
+    activation : Any, optional
+        Activation function applied to model layers (default is None, which initializes ReLU activation).
+    loss : Any, optional
+        Loss function used for training (default is None, which initializes Mean Squared Error loss).
+    scheduler : Any, optional
+        Learning rate scheduler (default is None, which initializes ReduceLROnPlateau scheduler with patience=100 and factor=0.5).
+    dropout : Any, optional
+        Dropout probability for regularization (default is None, which initializes no dropout).
 
-    Author: Ehsan Asgharzadeh
-    Copyright: Copyright (C) 2024 Ehsan Asgharzadeh
-    License: https://ehsanasgharzde.ir
-    Contact Info: https://ehsanasgharzadeh.asg@gmail.com
-    Version: 0.0.1
+    Methods
+    -------
+    __init__(self, optimizer=None, activation=None, loss=None, scheduler=None, dropout=None, inputChannels=3, growthRate=32, neurons=1024):
+        Initializes the edepth model with provided or default components.
+
+    How to Use
+    ----------
+    1. Initialization:
+    ```python
+    model = edepth(optimizer=optimizerInstance, activation=nn.ReLU(), loss=nn.MSELoss(), scheduler=schedulerInstance)
+    ```
+    Initialize an instance of `edepth` with optional components such as optimizer, activation function,
+    loss function, and learning rate scheduler.
+
+    2. Loading Pre-trained Model:
+    ```python
+    model.eload(filePath='path_to_your_model.pt')
+    ```
+    Load a pre-trained model from a file using the `eload` method.
+
+    3. Forward Pass (Depth Estimation):
+    ```python
+    inputImagePath = 'path_to_your_image.jpg'  # Example input image path
+    model.egenerate(source='image', inputFilePath=inputImagePath, show=True, save=False)
+    ```
+    Generate a depth map from an input image using the `egenerate` method with options to display (`show=True`)
+    or save (`save=True`) the depth map.
+
+    4. Training:
+    ```python
+    trainDataset = YourDatasetHere(...)  # Define your training dataset
+    model.etrain(trainset=trainDataset, epochs=numEpochs, batchSize=batchSize)
+    ```
+    Train the model using a DataLoader with batches of training data. Use the `etrain` method to
+    handle the training loop, loss calculation, and optimization.
+
+    Notes
+    -----
+    - The encoder is instantiated with specified input channels, growth rate, and number of layers.
+    - The fully connected layers adapt the encoder output for decoder input and vice versa.
+    - Optional components like optimizer, activation function, loss function, scheduler, and dropout
+    can be provided during initialization.
+    - If not provided, default implementations are used for these components.
+    - This class inherits from `nn.Module`, making it compatible with PyTorch's training and evaluation APIs.
     """
-
     __author__ = "Ehsan Asgharzadeh"
-    __copyright__ = "Copyright (C) 2024 Ehsan Asgharzadeh"
+    __copyright__ = "Copyright (C) 2024 edepth"
     __license__ = "https://ehsanasgharzde.ir"
     __contact__ = "https://ehsanasgharzadeh.asg@gmail.com"
-    __version__ = "0.0.1"
+    __date__ = "2024 Jun 22"
+    __version__ = "1.0.1"
 
     class _DenseBlock(nn.Module):
         """
-        DenseBlock module consisting of Batch Normalization, ReLU, and Convolution layers.
+        A dense block used in the edepth class.
+
+        This block consists of two convolutional layers with batch normalization,
+        designed to process input data and concatenate the output with the input.
+
+        Parameters
+        ----------
+        inputChannels : int
+            The number of input channels.
+        growthRate : int
+            The growth rate of the network, defining the number of output channels
+            for each convolutional layer.
+        device : torch.device
+            The device on which the model's parameters should be initialized (e.g., 'cuda' or 'cpu').
+
+        Attributes
+        ----------
+        batchNormI : nn.BatchNorm2d
+            Batch normalization layer for the input channels.
+        convolutionI : nn.Conv2d
+            First convolutional layer with a kernel size of 1.
+        batchNormII : nn.BatchNorm2d
+            Batch normalization layer for the growth rate channels.
+        convolutionII : nn.Conv2d
+            Second convolutional layer with a kernel size of 3 and padding of 1.
+
+        Methods
+        -------
+        forward(x)
+            Defines the forward pass of the dense block.
         """
-
-        def __init__(self, inputChannels, growthRate):
-            """
-            Initializes the DenseBlock.
-
-            Args:
-                inputChannels (int): Number of input channels.
-                growthRate (int): Growth rate for the DenseBlock.
-            """
+        def __init__(self, inputChannels, growthRate, device):
             super(edepth._DenseBlock, self).__init__()
-            self.batchNormI = nn.BatchNorm2d(inputChannels)
-            self.convolutionI = nn.Conv2d(inputChannels, growthRate, kernel_size=1)
-            self.batchNormII = nn.BatchNorm2d(growthRate)
-            self.convolutionII = nn.Conv2d(growthRate, growthRate, kernel_size=3, padding=1)
+
+            self.to(device)
+            self.batchNormI = nn.BatchNorm2d(inputChannels, device=device)
+            self.convolutionI = nn.Conv2d(inputChannels, growthRate, kernel_size=1, device=device)
+            self.batchNormII = nn.BatchNorm2d(growthRate, device=device)
+            self.convolutionII = nn.Conv2d(growthRate, growthRate, kernel_size=3, padding=1, device=device)
+
 
         def forward(self, x):
-            """
-            Forward pass through the DenseBlock.
-
-            Args:
-                x (torch.Tensor): Input tensor.
-
-            Returns:
-                torch.Tensor: Output tensor after passing through the DenseBlock.
-            """
             output = self.convolutionI(self.batchNormI(x))
             output = self.convolutionII(self.batchNormII(output))
             output = torch.cat([x, output], 1)
@@ -95,137 +163,103 @@ class edepth(nn.Module):
 
     class _TransitionLayer(nn.Module):
         """
-        TransitionLayer module consisting of Convolution and Max Pooling layers.
+        A transition layer used in the edepth class.
+
+        This layer consists of a convolutional layer followed by a max-pooling layer,
+        designed to reduce the dimensions of the input data while changing the number
+        of channels.
+
+        Parameters
+        ----------
+        inputChannels : int
+            The number of input channels.
+        outputChannels : int
+            The number of output channels.
+        device : torch.device
+            The device on which the model's parameters should be initialized (e.g., 'cuda' or 'cpu').
+
+        Attributes
+        ----------
+        convolution : nn.Conv2d
+            Convolutional layer with a kernel size of 1.
+        pool : nn.MaxPool2d
+            Max-pooling layer with a kernel size of 2 and stride of 2.
+
+        Methods
+        -------
+        forward(x)
+            Defines the forward pass of the transition layer.
         """
-
-        def __init__(self, inputChannels, outputChannels):
-            """
-            Initializes the TransitionLayer.
-
-            Args:
-                inputChannels (int): Number of input channels.
-                outputChannels (int): Number of output channels.
-            """
+        def __init__(self, inputChannels, outputChannels, device):
             super(edepth._TransitionLayer, self).__init__()
-            self.convolution = nn.Conv2d(inputChannels, outputChannels, kernel_size=1)
+
+            self.to(device)
+            self.convolution = nn.Conv2d(inputChannels, outputChannels, kernel_size=1, device=device)
             self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
         def forward(self, x):
-            """
-            Forward pass through the TransitionLayer.
-
-            Args:
-                x (torch.Tensor): Input tensor.
-
-            Returns:
-                torch.Tensor: Output tensor after passing through the TransitionLayer.
-            """
             output = self.convolution(x)
             output = self.pool(output)
             return output
 
-    class _UpSamplingI(nn.Module):
-        """
-        UpSamplingI module consisting of Batch Normalization, ReLU, Convolution, and Tanh layers.
-        """
-
-        def __init__(self, inputChannels, outputChannels):
-            """
-            Initializes the UpSamplingI.
-
-            Args:
-                inputChannels (int): Number of input channels.
-                outputChannels (int): Number of output channels.
-            """
-            super(edepth._UpSamplingI, self).__init__()
-            self.batchNorm = nn.BatchNorm2d(inputChannels)
-            self.convolution = nn.Conv2d(inputChannels, outputChannels, kernel_size=3, padding=1)
-            self.tanh = nn.Tanh()
-
-        def forward(self, x):
-            """
-            Forward pass through the UpSamplingI.
-
-            Args:
-                x (torch.Tensor): Input tensor.
-
-            Returns:
-                torch.Tensor: Output tensor after passing through the UpSamplingI.
-            """
-            output = self.convolution(self.batchNorm(x))
-            output = self.tanh(output)
-            return output
-
-    class _UpSamplingII(nn.Module):
-        """
-        UpSamplingII module consisting of ReLU and Convolution layers.
-        """
-
-        def __init__(self, inputChannels, outputChannels):
-            """
-            Initializes the UpSamplingII.
-
-            Args:
-                inputChannels (int): Number of input channels.
-                outputChannels (int): Number of output channels.
-            """
-            super(edepth._UpSamplingII, self).__init__()
-            self.convolutionI = nn.Conv2d(inputChannels, outputChannels, kernel_size=2, stride=2)
-            self.convolutionII = nn.Conv2d(outputChannels, outputChannels, kernel_size=3, padding=1)
-
-        def forward(self, x):
-            """
-            Forward pass through the UpSamplingII.
-
-            Args:
-                x (torch.Tensor): Input tensor.
-
-            Returns:
-                torch.Tensor: Output tensor after passing through the UpSamplingII.
-            """
-            output = self.convolutionI(nn.functional.relu(x))
-            output = self.convolutionII(nn.functional.relu(output))
-            return output
-
     class _Encoder(nn.Module):
         """
-        Encoder module consisting of initial convolution, DenseBlocks, and TransitionLayers.
+        An encoder module used in the edepth class.
+
+        This encoder consists of an initial convolutional layer followed by a pooling layer,
+        a series of dense blocks, and transition layers. It processes the input data through
+        these layers to reduce its dimensions while extracting features.
+
+        Parameters
+        ----------
+        inputChannels : int
+            The number of input channels.
+        growthRate : int
+            The growth rate of the network, defining the number of output channels for each dense block.
+        numLayers : int
+            The number of dense blocks in the encoder.
+        device : torch.device
+            The device on which the model's parameters should be initialized (e.g., 'cuda' or 'cpu').
+
+        Attributes
+        ----------
+        initialConvolution : nn.Conv2d
+            Initial convolutional layer with a kernel size of 5 and padding of 2.
+        pool : nn.MaxPool2d
+            Max-pooling layer with a kernel size of 2 and stride of 2.
+        denseBlocks : nn.ModuleList
+            List of dense blocks.
+        transitionLayers : nn.ModuleList
+            List of transition layers.
+        outputChannels : int
+            The number of output channels after the final dense block and transition layer.
+
+        Methods
+        -------
+        forward(x)
+            Defines the forward pass of the encoder.
         """
-
-        def __init__(self, inputChannels, growthRate):
-            """
-            Initializes the Encoder.
-
-            Args:
-                inputChannels (int): Number of input channels.
-                growthRate (int): Growth rate for the DenseBlocks.
-            """
+        def __init__(self, inputChannels, growthRate, numLayers, device):
             super(edepth._Encoder, self).__init__()
-            self.initialConvolution = nn.Conv2d(inputChannels, growthRate, kernel_size=5, padding=2)
+
+            self.to(device)
+            self.initialConvolution = nn.Conv2d(inputChannels, growthRate, kernel_size=5, padding=2, device=device)
             self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
-            numLayers = 4
             self.denseBlocks = nn.ModuleList()
             self.transitionLayers = nn.ModuleList()
 
+            
             numChannels = growthRate
             for i in range(numLayers):
-                self.denseBlocks.append(edepth._DenseBlock(numChannels, growthRate))
+                self.denseBlocks.append(edepth._DenseBlock(numChannels, growthRate, device=device))
                 numChannels += growthRate
                 if i != numLayers - 1:
-                    self.transitionLayers.append(edepth._TransitionLayer(numChannels, numChannels // 2))
+                    self.transitionLayers.append(edepth._TransitionLayer(numChannels, numChannels // 2, device=device))
                     numChannels = numChannels // 2
+            self.outputChannels = numChannels // 2
 
         def forward(self, x):
-            """
-            Forward pass through the Encoder.
-
-            Args:
-                x (torch.Tensor): Input tensor.
-
-            Returns:
-                torch.Tensor: Output tensor after passing through the Encoder.
-            """
             output = self.initialConvolution(x)
             output = self.pool(output)
             for i, block in enumerate(self.denseBlocks):
@@ -236,226 +270,229 @@ class edepth(nn.Module):
 
     class _Decoder(nn.Module):
         """
-        Decoder module consisting of multiple UpSampling layers to reconstruct the depth map.
+        A decoder module used in the edepth class.
+
+        This decoder consists of a series of upsampling layers followed by convolutional layers.
+        It processes the input data through these layers to upsample and reduce the number of channels,
+        ultimately producing a single-channel output.
+
+        Parameters
+        ----------
+        inputChannels : int
+            The number of input channels.
+        device : torch.device
+            The device on which the model's parameters should be initialized (e.g., 'cuda' or 'cpu').
+
+        Attributes
+        ----------
+        upSampleI : nn.Upsample
+            First upsampling layer with a scale factor of 2.
+        convI : nn.Conv2d
+            First convolutional layer with a kernel size of 3 and padding of 1.
+        upSampleII : nn.Upsample
+            Second upsampling layer with a scale factor of 2.
+        convII : nn.Conv2d
+            Second convolutional layer with a kernel size of 3 and padding of 1.
+        upSampleIII : nn.Upsample
+            Third upsampling layer with a scale factor of 2.
+        convIII : nn.Conv2d
+            Third convolutional layer with a kernel size of 3 and padding of 1.
+        upSampleIV : nn.Upsample
+            Fourth upsampling layer with a scale factor of 2.
+        convIV : nn.Conv2d
+            Fourth convolutional layer with a kernel size of 3 and padding of 1.
+
+        Methods
+        -------
+        forward(x)
+            Defines the forward pass of the decoder.
         """
-
-        def __init__(self, inputChannels):
-            """
-            Initializes the Decoder.
-
-            Args:
-                inputChannels (int): Number of input channels.
-            """
+        def __init__(self, inputChannels, device):
             super(edepth._Decoder, self).__init__()
-            self.upSamplingI = edepth._UpSamplingII(inputChannels, inputChannels // 2)
-            self.upSamplingII = edepth._UpSamplingII(inputChannels // 2, inputChannels // 4)
-            self.upSamplingIII = edepth._UpSamplingII(inputChannels // 4, inputChannels // 8)
-            self.upSamplingIV = edepth._UpSamplingI(inputChannels // 8, 1)
+            self.upSampleI = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+            self.convI = nn.Conv2d(inputChannels, inputChannels // 2, kernel_size=3, padding=1, device=device)
+            
+            self.upSampleII = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+            self.convII = nn.Conv2d(inputChannels // 2, inputChannels // 4, kernel_size=3, padding=1, device=device)
+            
+            self.upSampleIII = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+            self.convIII = nn.Conv2d(inputChannels // 4, inputChannels // 8, kernel_size=3, padding=1, device=device)
+            
+            self.upSampleIV = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+            self.convIV = nn.Conv2d(inputChannels // 8, 1, kernel_size=3, padding=1, device=device)
 
         def forward(self, x):
-            """
-            Forward pass through the Decoder.
-
-            Args:
-                x (torch.Tensor): Input tensor.
-
-            Returns:
-                torch.Tensor: Output tensor after passing through the Decoder.
-            """
-            output = self.upSamplingI(x)
-            output = self.upSamplingII(output)
-            output = self.upSamplingIII(output)
-            output = self.upSamplingIV(output)
-            return output
-    
-    def __init__(self, 
-                 optimizer: Any = None,
-                 activation: Any = None,
-                 loss: Any = None,
-                 scheduler: Any = None,
-                 dropout: Any = None,
-                 inputChannels: int = 3,
-                 growthRate: int = 32,
-                 minDepth: float = None,
-                 maxDepth: float = None) -> None:
-        """
-        Initializes the depth estimation model.
-
-        Args:
-            `numLayers` (int, optional): Number of layers in the encoder and decoder. Defaults to 5.
-            `kernelSize` (int, optional): Size of the convolutional kernels. Defaults to 3.
-            `numKernels` (int, optional): Number of kernels in the convolutional layers. Defaults to 64.
-            `strideLength` (int, optional): Stride length for convolutional layers. Defaults to 1.
-            `poolSize` (int, optional): Size of the max-pooling windows. Defaults to 2.
-            `numNeurons` (int, optional): Number of neurons in the fully connected layers. Defaults to 512.
-            `activation` (str, optional): Activation function to be used. Defaults to 'relu'.
-            `minDepth` (float, optional): Minimum depth value for depth estimation. Defaults to None.
-            `maxDepth` (float, optional): Maximum depth value for depth estimation. Defaults to None.
-            `linBiasI` (bool, optional): Whether to include bias in the first linear layer. Defaults to True.
-            `linBiasII` (bool, optional): Whether to include bias in the second linear layer. Defaults to True.
-            `padding` (int, optional): Padding size for convolutional layers. Defaults to 1.
-            `inputChannels` (int, optional): Number of input channels for the convolutional layers. Defaults to 64.
-            `outputChannels` (int, optional): Number of output channels for the convolutional layers. Defaults to 128.
-        """
+            x = self.upSampleI(x)
+            x = nn.functional.relu(self.convI(x))
+            
+            x = self.upSampleII(x)
+            x = nn.functional.relu(self.convII(x))
+            
+            x = self.upSampleIII(x)
+            x = nn.functional.relu(self.convIII(x))
+            
+            x = self.upSampleIV(x)
+            x = torch.tanh(self.convIV(x))
+            
+            return x
+        
+    def __init__(self,  optimizer: Any = None, activation: Any = None, loss: Any = None, scheduler: Any = None, dropout: Any = None, inputChannels: int = 3, growthRate: int = 32, neurons: int = 1024) -> None:
         super(edepth, self).__init__()
+        self.device, self.To = self.__getDevice()
 
-        self.encoder = edepth._Encoder(inputChannels, growthRate)
-        self.adaptivePool = nn.AdaptiveAvgPool2d((7, 7)) 
-        self.decoder = edepth._Decoder(growthRate * 2)
+        self.encoder = edepth._Encoder(inputChannels, growthRate, 4, device=self.device)
 
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.optimizer = optimizer
-        self.activation = activation
-        self.loss = loss
-        self.scheduler = scheduler
-        self.dropout = dropout
+        encoderOutSize = self.encoder.outputChannels * 2 * 14 * 14
+        self.fullyConnectedI = nn.Linear(encoderOutSize, neurons, device=self.device)
+        self.fullyConnectedII = nn.Linear(neurons, encoderOutSize, device=self.device)
 
-        if optimizer is None:
-            self.optimizer = optim.Adam(self.parameters(), lr=0.001)
-        if activation is None:
-            self.activation = nn.ReLU()
-        if loss is None:
-            self.loss = nn.MSELoss()
-        if scheduler is None:
-            self.scheduler = Scheduler.StepLR(self.optimizer, step_size=10, gamma=0.1)
+        self.decoder = edepth._Decoder(growthRate * 2, self.device)
 
-        self.minDepth = minDepth
-        self.maxDepth = maxDepth
+        self.optimizer = optimizer if optimizer is not None else swats.SWATS(self.parameters(), lr=0.0001)
+        self.activation = activation if activation is not None else nn.ReLU()
+        self.loss = loss if loss is not None else nn.MSELoss()
+        self.scheduler = scheduler if scheduler is not None else torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 'min', patience=100,  factor=0.5)
+        self.dropout = nn.Dropout(dropout) if dropout else nn.Identity()
  
-    def __del__(self) \
-                      -> None:
-        """
-        Deconstructor to release GPU memory.
-        """
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+    def __del__(self) -> None:
+        try:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
-    def __str__(self) \
-                      -> str:
-        """
-        Return a string representation of the object including memory address.
-        """
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+
+            del self.encoder
+            del self.decoder
+        except:
+            pass
+
+    def __str__(self) -> str:
         return f"<class 'edepth' at {hex(id(self))}>"
 
-    def __repr__(self) \
-                       -> str:
-        """
-        Return a detailed string representation of the object.
-        """
+    def __repr__(self) -> str:
         return f"Author: Ehsan Asgharzadeh <https://ehsanasgharzde@gmail.com>\nLicense: https://ehsanasgharzde.ir"
    
-    def __class__(self) \
-                        -> str:
-        """Return a custom representation of the class."""
+    def __class__(self) -> str:
         return "<class 'edepth'>"
     
-    def forward(self, 
-                x: torch.Tensor) -> torch.Tensor:
-        """
-        Defines the forward pass of the depth estimation model.
-
-        Args:
-            x (torch.Tensor): Input tensor of shape (batchSize, channels, height, width).
-
-        Returns:
-            torch.Tensor: Output tensor representing the estimated depth map.
-
-        Raises:
-            ValueError: If the input tensor does not have the expected shape.
-        """
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         if x.dim() != 4:
             raise ValueError("Input tensor must have shape (batchSize, channels, height, width).")
-
-        features = self.encoder(x)
-        output = self.decoder(features)
         
-        return output
-
-    def esave(self, 
-              filepath: str, 
-              suffix: str = 'pt') -> None:
-        """
-        Save the model to a file.
-
-        Args:
-            `filepath` (str): Path to the file where the model will be saved.
-            `suffix` (str, optional): Suffix indicating the file format. Defaults to 'pt'.
-
-        Raises:
-            `ValueError`: If the specified file suffix is not supported.
-
-        Note:
-            Supported file suffixes:
-            - `pth`: Save only the model's state dictionary.
-            - `pt`: Save the entire model including architecture and parameters.
-
-        """
-        suffixes = {'pth': torch.save(self.state_dict(), filepath),
-                    'pt': torch.save(self, filepath)}
-        if suffix in suffixes:
-            suffixes[suffix]
-            print("Model saved successfully.")
-        else:
-            raise ValueError("ValueError | Unsupported file suffix. Choose 'pth' or 'pt'.")
+        x = self.encoder(x)
+        x = x.view(x.size(0), -1)
+        x = self.activation(self.fullyConnectedI(x))
+        x = self.dropout(x)
+        x = self.activation(self.fullyConnectedII(x))
+        x = x.view(x.size(0), self.encoder.outputChannels * 2, 14, 14)
+        x = self.decoder(x)
+        return x
     
-    def eload(self,
-            filepath: str) -> None:
+    def eload(self, filePath: str) -> None:
         """
-        Load model parameters from a file.
+        Load the model state from a file.
 
-        Args:
-            `filepath` (str): Path to the file containing the model parameters.
+        This method loads the model's state dictionary from a specified file path.
+        It handles file not found and runtime errors that might occur during the process.
 
-        Raises:
-            `FileNotFoundError`: If the specified file does not exist.
-            `RuntimeError`: If attempting to load parameters from an incompatible model.
+        Parameters
+        ----------
+        filePath : str
+            The path to the file from which to load the model state.
 
-        Note:
-            Ensure that the architecture of the loaded model matches the current model.
-            Use `torch.load(filepath, map_location=torch.device('cpu'))` for loading models saved on GPU to CPU.
+        Raises
+        ------
+        FileNotFoundError
+            If the specified file does not exist.
+        RuntimeError
+            If there is an error while loading the model state.
 
+        Examples
+        --------
+        >>> model.eload('path/to/model.pth')
+        Model `model.pth` loaded successfully.
+
+        >>> model.eload('nonexistent/file.pth')
+        Traceback (most recent call last):
+            ...
+        FileNotFoundError: FileNotFoundError | File `nonexistent/file.pth` not found.
         """
         try:
-            self.load_state_dict(torch.load(filepath, map_location=self.device))
-            print("Model loaded successfully.")
+            self.load_state_dict(torch.load(filePath, map_location=self.device))
+            fileName = filePath.replace('\\', '/').split('/')[-1]
+            print(f"Model '{fileName}' loaded successfully.")
+
         except FileNotFoundError:
-            raise FileNotFoundError(f"FileNotFoundError | File '{filepath}' not found.")
+            raise FileNotFoundError(f"FileNotFoundError | File '{filePath}' not found.")
         except RuntimeError as e:
-            raise RuntimeError(f"RuntimeError | Error while loading model: {str(e)}")
+            raise RuntimeError(f"RuntimeError | Error while loading model: \n{str(e)}")
 
-    def etrain(self, 
-            trainset: Dataset,
-            validationset: Optional[Dataset] = None, 
-            epochs: int = 10, 
-            batchSize: int = 32, 
-            shuffle: bool = True, 
-            validationMetrics: Optional[Dict[str, Any]] = None, 
-            gradientClip: Optional[float] = None, 
-            logInterval: Optional[int] = None, 
-            earlyStoppingPatience: int = 5, 
-            checkpointPath: Optional[str] = None, 
-            saveBestOnly: bool = True) -> None:
+    def etrain(self, trainset: Dataset, validationset: Optional[Dataset] = None, epochs: int = 10, batchSize: int = 32, shuffle: bool = True, validationMetrics: Optional[Dict[str, Any]] = None, gradientClip: Optional[float] = None, logInterval: Optional[int] = None, earlyStoppingPatience: int = 10, checkpointPath: Optional[str] = None, saveBestOnly: bool = True) -> None:
         """
-        Train the depth estimation model.
+        Train the model on the provided datasets.
 
-        Args:
-            `trainset` (torch.utils.data.Dataset): The training dataset.
-            `validationset` (torch.utils.data.Dataset, optional): The validation dataset. Default is None.
-            `epochs` (int, optional): The number of epochs for training. Default is 10.
-            `batchSize` (int, optional): The batch size for training. Default is 32.
-            `shuffle` (bool, optional): Whether to shuffle the training data. Default is True.
-            `validationMetrics` (dict, optional): Metrics to evaluate the validation performance. Default is None.
-            `gradientClip` (float, optional): Gradient clipping value. Default is None.
-            `logInterval` (int, optional): Interval for logging training progress. Default is None.
-            `earlyStoppingPatience` (int, optional): Patience for early stopping. Default is 5.
-            `checkpointPath` (str, optional): Path to save model checkpoints. Default is None.
-            `saveBestOnly` (bool, optional): Whether to save only the best model checkpoint. Default is True.
+        This method trains the model on the `trainset` dataset for `epochs` epochs. Optionally, it can validate the model on the `validationset` dataset,
+        save checkpoints of the best model based on validation loss, perform early stopping, and log training progress.
 
-        Raises:
-            `RuntimeError`: If an error occurs during training.
+        Parameters
+        ----------
+        trainset : Dataset
+            The training dataset.
+        validationset : Optional[Dataset], optional
+            The validation dataset (default is None).
+        epochs : int, optional
+            The number of epochs to train the model (default is 10).
+        batchSize : int, optional
+            The batch size used for training and validation (default is 32).
+        shuffle : bool, optional
+            Whether to shuffle the training data at the beginning of each epoch (default is True).
+        validationMetrics : Optional[Dict[str, Any]], optional
+            Additional metrics to evaluate on the validation set (default is None).
+        gradientClip : Optional[float], optional
+            Maximum norm of gradients for gradient clipping during training (default is None).
+        logInterval : Optional[int], optional
+            Interval for logging training progress in number of epochs (default is None).
+        earlyStoppingPatience : int, optional
+            Number of epochs to wait for improvement in validation loss before triggering early stopping (default is 10).
+        checkpointPath : Optional[str], optional
+            Path to save checkpoints of the model with the best validation loss (default is None).
+        saveBestOnly : bool, optional
+            Whether to save only the best model based on validation loss (default is True).
 
-        Returns:
-            None
+        Returns
+        -------
+        validationLoss : float or None
+            The final validation loss after training, or None if `validationset` is None.
+        validationAccuracy : float or None
+            The final validation accuracy after training, or None if `validationset` is None.
+        trainLoss : float
+            The final training loss after training.
+        trainAccuracy : float
+            The final training accuracy after training.
+
+        Raises
+        ------
+        RuntimeError
+            If there is an error during the training process.
+
+        Examples
+        --------
+        >>> model.etrain(train_dataset, validation_dataset, epochs=20, batchSize=64, earlyStoppingPatience=5)
+        edepth Parameters: 10M
+        Epoch: 01 | Epoch Time: 1m 30s
+            Train Loss: 0.345 | Train Accuracy: 87.3%
+            Validation Loss: 0.212 | Validation Accuracy: 91.5%
+        Epoch: 02 | Epoch Time: 1m 28s
+            Train Loss: 0.278 | Train Accuracy: 89.7%
+            Validation Loss: 0.198 | Validation Accuracy: 92.1%
+        ...
+
+        Notes
+        -----
+        - If `validationMetrics` is provided, these metrics are printed after each validation evaluation.
+        - If `saveBestOnly` is True, only the model with the best validation loss is saved to `checkpointPath`.
+        - The learning rate scheduler, if specified in the model, is updated after each epoch.
         """
         try:
             trainLoader = DataLoader(trainset, batch_size=batchSize, shuffle=shuffle)
@@ -463,6 +500,7 @@ class edepth(nn.Module):
             bestValidationLoss = float('inf')
             epochsWithNoImprove = 0
             
+            print('edepth Parammeters: ', f"{sum(parameters.numel() for parameters in self.parameters(recurse=True)) / 1e6:.0f}M")
             for epoch in range(1, epochs + 1):
                 startTime = time.monotonic()
                 trainLoss, trainAccuracy = self.__trainPerEpoch(trainLoader, gradientClip)
@@ -471,15 +509,15 @@ class edepth(nn.Module):
                 if validationLoss is not None and validationLoss < bestValidationLoss:
                     bestValidationLoss = validationLoss
                     if checkpointPath:
-                        torch.save(self.state_dict(), checkpointPath)
+                        torch.save(self.state_dict(), os.path.join(checkpointPath, f"ep-{epoch}-valacc-{validationAccuracy}.pt"))
 
                 endTime = time.monotonic()
                 epochMinutes, epochSeconds = divmod(endTime - startTime, 60)
 
-                print(f'Epoch: {epoch:02} | Epoch Time: {epochMinutes:.0f}m {epochSeconds:.0f}s')
-                print(f'\tTrain Loss: {trainLoss:.3f} | Train Accuracy: {trainAccuracy * 100:.2f}%')
+                print(f'Epoch: {epoch:02} | Epoch Time: {epochMinutes:.0f}m {epochSeconds:.0f}s') 
+                print(f'\tTrain Loss: {trainLoss} | Train Accuracy: {trainAccuracy * 100}%') 
                 if validationLoss is not None:
-                    print(f'\tValidation Loss: {validationLoss:.3f} | Validation Accuracy: {validationAccuracy * 100:.2f}%')
+                    print(f'\tValidation Loss: {validationLoss} | Validation Accuracy: {validationAccuracy * 100}%')
 
                 if validationMetrics is not None:
                     for metricName, metricValue in validationMetrics.items():
@@ -488,14 +526,14 @@ class edepth(nn.Module):
                 if saveBestOnly and validationLoss is not None and validationLoss >= bestValidationLoss:
                     epochsWithNoImprove += 1
                     if epochsWithNoImprove >= earlyStoppingPatience:
-                        print("Early stopping triggered.")
+                        print(f"Early stopping triggered with {epochsWithNoImprove} epoch with no improvements.")
                         break
                 else:
                     epochsWithNoImprove = 0
 
                 if self.scheduler:
                     if isinstance(self.scheduler, _LRScheduler):
-                        if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                        if isinstance(self.scheduler, Scheduler.ReduceLROnPlateau):
                             self.scheduler.step(validationLoss)
                         else:
                             self.scheduler.step()
@@ -503,51 +541,86 @@ class edepth(nn.Module):
                 if logInterval is not None and epoch % logInterval == 0:
                     print(f"Epoch {epoch}/{epochs}, Loss: {trainLoss:.4f}")
 
+            return validationLoss, validationAccuracy, trainLoss, trainAccuracy
+
         except Exception as e:
             raise RuntimeError(f"RuntimeError | Error during training:\n{str(e)}")
 
-    def egenerate(self,
-                source: str,
-                inputWidth: int = 640,
-                inputHeight: int = 480,
-                show: bool = False,
-                save: bool = True,
-                outputDir: str = 'depthmaps',
-                outputFormat: str = 'jpg',
-                outputFilename: str = 'depthmap',
-                colormap: str = 'colorized',
-                frameRange: tuple = None,
-                resize: tuple = None) -> None:
+    def egenerate(self, source: str, inputFilePath: str = 'input', show: bool = False, save: bool = True, outputDir: str = 'output', outputFormat: str = 'jpg', outputFilename: str = 'depthmap', colormap: str = 'colorized', frameRange: tuple = None, resize: tuple = (224, 224), minDepth: float = None, maxDepth: float = None) -> None:
         """
-        Generate depth maps from images, videos, or live streams.
+        Generate depth maps from images, videos, or live camera feed.
 
-        Args:
-            `source` (str): Source type, can be 'image', 'video', or 'live'.
-            `inputWidth` (int, optional): Input image width. Default is 640.
-            `inputHeight` (int, optional): Input image height. Default is 480.
-            `show` (bool, optional): Whether to display generated depth maps. Default is False.
-            `save` (bool, optional): Whether to save generated depth maps. Default is True.
-            `outputDir` (str, optional): Directory to save the depth maps. Default is 'depthmaps'.
-            `outputFormat` (str, optional): Output image format. Default is 'jpg'.
-            `outputFilename` (str, optional): Filename for the saved depth maps. Default is 'depthmap'.
-            `colormap` (str, optional): Colormap to use for visualization. Default is 'colorized'.
-            `frameRange` (tuple, optional): Range of frames to process in a video. Default is None.
-            `resize` (tuple, optional): Resize dimensions for the input frames. Default is None.
+        This method processes input data from various sources (image, video, live feed) to generate depth maps using the model.
 
-        Returns:
-            None
+        Parameters
+        ----------
+        source : str
+            The source of input data. Choices are 'image' for single image file, 'video' for video file, or 'live' for live camera feed.
+        inputFilePath : str
+            The path to the input file (image or video) or camera index (for live feed).
+        show : bool, optional
+            Whether to display the generated depth map (default is False).
+        save : bool, optional
+            Whether to save the generated depth map to disk (default is True).
+        outputDir : str, optional
+            The directory to save the output depth maps (default is 'depthmaps').
+        outputFormat : str, optional
+            The format of the output depth map file ('jpg', 'png', etc.) if saving (default is 'jpg').
+        outputFilename : str, optional
+            The base filename for the saved depth map (default is 'depthmap').
+        colormap : str, optional
+            The colormap to apply to the depth map ('grayscale', 'colorized') (default is 'colorized').
+        frameRange : tuple, optional
+            Range of frames to process from the video (start frame index, end frame index) (default is None, processes all frames).
+        resize : tuple, optional
+            The dimensions to resize the input frames (height, width) (default is (224, 224)).
+        minDepth : float, optional
+            Minimum depth value for depth map visualization (default is None, auto-scaled).
+        maxDepth : float, optional
+            Maximum depth value for depth map visualization (default is None, auto-scaled).
+
+        Raises:
+        ------
+        ValueError
+            If an invalid `source` is provided.
+        FileNotFoundError
+            If the specified `inputFilePath` does not exist.
+
+        Notes:
+        ------
+        - When `source` is 'image', it reads the image from `inputFilePath`, generates a depth map using the internal 'edepth' model,
+          and optionally displays and/or saves the depth map.
+        - When `source` is 'video', it reads the video from `inputFilePath`, processes each frame to generate depth maps,
+          and optionally displays and/or saves each frame's depth map.
+        - When `source` is 'live', it captures frames from the live camera feed, generates depth maps in real-time,
+          and optionally displays and/or saves each frame's depth map.
+        - The depth maps can be visualized either in grayscale or colorized format based on the `colormap` parameter.
+
+        Example:
+        --------
+        ```python
+        model = edepth()
+        model.eload('path_to_model.pt')  # Load a pre-trained model
+        
+        # Generate depth map from an image
+        model.egenerate(source='image', inputFilePath='path_to_image.jpg', show=True, save=True)
+
+        # Generate depth maps from a video and save them
+        model.egenerate(source='video', inputFilePath='path_to_video.mp4', show=False, save=True)
+
+        # Generate and display depth map from live camera feed
+        model.egenerate(source='live', inputFilePath='', show=True, save=False)
+        ```
         """
         if save and not os.path.exists(outputDir):
             os.makedirs(outputDir)
 
         if source == 'image':
-            image = cv2.imread(source)
-            if resize:
-                image = cv2.resize(image, (resize[1], resize[0]))
-            depthMap = self.__processImage(image, inputWidth, inputHeight, colormap)
+            image = cv2.imread(inputFilePath)
+            depthMap = self.__processImage(image, resize[1], resize[0], colormap, minDepth, maxDepth)
 
             if show:
-                cv2.imshow('Depth Map', depthMap)
+                cv2.imshow('edepth - image', depthMap)
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
 
@@ -556,7 +629,7 @@ class edepth(nn.Module):
                 cv2.imwrite(outputPath, depthMap)
         
         elif source == 'video':
-            cap = cv2.VideoCapture(source)
+            cap = cv2.VideoCapture(inputFilePath)
             frameWidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             frameHeight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             fps = int(cap.get(cv2.CAP_PROP_FPS))
@@ -564,10 +637,7 @@ class edepth(nn.Module):
             out = None
             if save:
                 outputPath = os.path.join(outputDir, f'{outputFilename}.avi')
-                out = cv2.VideoWriter(outputPath, 
-                                    cv2.VideoWriter_fourcc(*'DIVX'), 
-                                    fps, 
-                                    (frameWidth, frameHeight))
+                out = cv2.VideoWriter(outputPath, cv2.VideoWriter_fourcc(*'DIVX'), fps, (frameWidth, frameHeight))
 
             while True:
                 ret, frame = cap.read()
@@ -579,13 +649,12 @@ class edepth(nn.Module):
                 if frameRange and cap.get(cv2.CAP_PROP_POS_FRAMES) > frameRange[1]:
                     break
                 
-                if resize:
-                    frame = cv2.resize(frame, (resize[1], resize[0]))
-                
-                depthMap = self.__processImage(frame, inputWidth, inputHeight, colormap)
+                depthMap = self.__processImage(frame, resize[1], resize[0], colormap, minDepth, maxDepth)
 
                 if show:
-                    cv2.imshow('Depth Map', depthMap)
+                    depthMapResized = cv2.cvtColor(cv2.resize(depthMap, (frameWidth // 2, frameHeight // 2)), cv2.COLOR_GRAY2BGR)
+                    frameResized = cv2.resize(frame, (frameWidth // 2, frameHeight // 2))
+                    cv2.imshow('edepth - video', np.hstack((frameResized, depthMapResized)))
                     if cv2.waitKey(1) & 0xFF == ord('q'):
                         break
 
@@ -602,34 +671,54 @@ class edepth(nn.Module):
 
             while True:
                 ret, frame = cap.read()
+                frame = cv2.flip(frame, 1)
                 if not ret:
                     break
-                
-                if resize:
-                    frame = cv2.resize(frame, (resize[1], resize[0])) 
 
-                depthMap = self.__processImage(frame, inputWidth, inputHeight, colormap)
+                depthMap = self.__processImage(frame, resize[1], resize[0], colormap, minDepth, maxDepth)
 
                 if show:
-                    cv2.imshow('Depth Map', depthMap)
+                    depthMapResized = cv2.cvtColor(cv2.resize(depthMap, (frame.shape[1], frame.shape[0])), cv2.COLOR_GRAY2BGR)
+                    cv2.imshow('edepth - live feed', np.hstack((frame, depthMapResized)))
                     if cv2.waitKey(1) & 0xFF == ord('q'):
                         break
 
             cap.release()
             cv2.destroyAllWindows()
 
-    def __trainPerEpoch(self, 
-                        trainLoader: Any, 
-                        gradientClip: float) -> Tuple[float, float]:
+    def __trainPerEpoch(self, trainLoader: Any, gradientClip: float) -> Tuple[float, float]:
         """
-        Train the model for one epoch.
+        Perform training for one epoch.
 
-        Args:
-            `trainLoader` (torch.utils.data.DataLoader): DataLoader for training dataset.
-            `gradientClip` (float, optional): Gradient clipping value. Default is None.
+        This method executes one epoch of training using the provided data loader `trainLoader`. It computes the loss,
+        performs backpropagation, and updates the model parameters.
 
-        Returns:
-            `Tuple[float, float]`: Average loss and accuracy for the epoch.
+        Parameters
+        ----------
+        trainLoader : Any
+            The data loader containing batches of training data.
+        gradientClip : float
+            The maximum norm value for gradient clipping during backpropagation.
+
+        Returns
+        -------
+        float
+            The average loss per batch for the epoch.
+        float
+            The accuracy of the model for the epoch.
+
+        Raises
+        ------
+        RuntimeError
+            If there is a CUDA memory issue during training.
+
+        Notes
+        -----
+        - This method assumes the model (`self`) is in training mode (`self.train()`).
+        - It uses the optimizer (`self.optimizer`) initialized outside this method.
+        - Progress during training is visualized with an alive bar.
+        - Gradient clipping is applied if `gradientClip` is provided.
+        - CUDA memory warnings are printed if memory issues occur during training.
         """
         epochLoss = 0
         epochCorrect = 0
@@ -639,12 +728,10 @@ class edepth(nn.Module):
             self.train()
             with alive_bar(len(trainLoader)) as bar:
                 for images, labels in trainLoader:
-                    images, labels = self.__selectAugmentation((images, labels))
-                    images, labels = images.to(self.device), labels.to(self.device)
+                    images, labels = images.to(self.To), labels.to(self.To)
                     
                     self.optimizer.zero_grad()
                     outputs = self(images)
-                    outputs = F.interpolate(outputs, size=labels.shape[2:], mode='bilinear', align_corners=False)
 
                     loss = self.loss(outputs, labels)
                     loss.backward()
@@ -656,12 +743,15 @@ class edepth(nn.Module):
                     
                     epochLoss += loss.item()
                     _, predicted = torch.max(outputs, 1)
-                    epochCorrect += (predicted == torch.mean(labels, dim=1, keepdim=True)).sum().item()
-                    epochTotal += labels.size(0)
+                    correctPixels = (predicted == labels).sum().item()
+                    totalPixels = labels.numel()
+
+                    epochCorrect += correctPixels
+                    epochTotal += totalPixels
                     
                     bar()
             
-            epochAccuracy = epochCorrect / epochTotal if epochTotal > 0 else 0.0
+            epochAccuracy = correctPixels / totalPixels if totalPixels > 0 else 0.0
         
             return epochLoss / len(trainLoader), epochAccuracy
 
@@ -674,16 +764,36 @@ class edepth(nn.Module):
             else:
                 raise e
 
-    def __evaluatePerEpoch(self, 
-                           validationLoader: Any) -> Tuple[float, float]:
+    def __evaluatePerEpoch(self, validationLoader: Any) -> Tuple[float, float]:
         """
-        Evaluate the model for one epoch.
+        Perform evaluation for one epoch.
 
-        Args:
-            `validationLoader` (torch.utils.data.DataLoader): DataLoader for validation dataset.
+        This method evaluates the model performance on a validation set using the provided data loader `validationLoader`.
+        It computes the average loss and accuracy for the entire validation set.
 
-        Returns:
-            `Tuple[float, float]`: Average loss and accuracy for the epoch.
+        Parameters
+        ----------
+        validationLoader : Any
+            The data loader containing batches of validation data.
+
+        Returns
+        -------
+        float
+            The average loss per batch for the epoch.
+        float
+            The accuracy of the model for the epoch.
+
+        Raises
+        ------
+        RuntimeError
+            If there is a CUDA memory issue during evaluation.
+
+        Notes
+        -----
+        - This method assumes the model (`self`) is in evaluation mode (`self.eval()`).
+        - It does not perform gradient computation, utilizing `torch.no_grad()` context.
+        - Progress during evaluation is visualized with an alive bar.
+        - CUDA memory warnings are printed if memory issues occur during evaluation.
         """
         epochLoss = 0
         epochCorrect = 0
@@ -694,17 +804,19 @@ class edepth(nn.Module):
             with alive_bar(len(validationLoader)) as bar:
                 with torch.no_grad():
                     for images, labels in validationLoader:
-                        images, labels = images.to(self.device), labels.to(self.device)
+                        images, labels = images.to(self.To), labels.to(self.To)
                         outputs = self(images)
-                        outputs = F.interpolate(outputs, size=labels.shape[2:], mode='bilinear', align_corners=False)
 
                         loss = self.loss(outputs, labels)
                         
                         epochLoss += loss.item()
                         _, predicted = torch.max(outputs, 1)
-                        epochCorrect += (predicted == torch.mean(labels, dim=1, keepdim=True)).sum().item()
-                        epochTotal += labels.size(0)
-                        
+                        correctPixels = (predicted == labels).sum().item()
+                        totalPixels = labels.numel()
+
+                        epochCorrect += correctPixels
+                        epochTotal += totalPixels     
+
                         bar()
             
             epochAccuracy = epochCorrect / epochTotal if epochTotal > 0 else 0.0
@@ -719,66 +831,82 @@ class edepth(nn.Module):
             else:
                 raise e
 
-    def __processImage(self, 
-                       image: Any, 
-                       inputWidth: int, 
-                       inputHeight: int, 
-                       colormap: str) -> np.ndarray:
+    def __processImage(self, image: Any, inputWidth: int, inputHeight: int, colormap: str, minDepth: float = None, maxDepth: float = None) -> np.ndarray:
         """
-        Preprocesses the input image, performs a forward pass through the model, and post-processes the depth map.
+        Process an image to generate a depth map using the model.
 
-        Args:
-            `image` (Any): The input image.
-            `inputWidth` (int): The width of the input image.
-            `inputHeight` (int): The height of the input image.
-            `colormap` (str): The choice of colormap for visualization.
+        This method takes an input image, preprocesses it, computes the depth map using the model, and post-processes
+        the depth map for visualization.
 
-        Returns:
-            np.ndarray: The processed depth map.
+        Parameters
+        ----------
+        image : Any
+            The input image data, expected in a format compatible with Torch tensors.
+        inputWidth : int
+            The width to resize the input image before processing.
+        inputHeight : int
+            The height to resize the input image before processing.
+        colormap : str
+            The colormap to apply to the depth map visualization ('grayscale', 'jet', etc.).
+        minDepth : float, optional
+            Minimum depth value for depth map visualization (default is None, auto-scaled).
+        maxDepth : float, optional
+            Maximum depth value for depth map visualization (default is None, auto-scaled).
+
+        Returns
+        -------
+        np.ndarray
+            The generated depth map as a NumPy array.
+
+        Notes
+        -----
+        - This method assumes the model (`self`) is capable of processing Torch tensors.
+        - The input image is resized to `(inputWidth, inputHeight)` before being fed into the model.
+        - The depth map is computed using the model's `forward` method.
+        - Postprocessing includes converting the depth map to a NumPy array and applying colormap visualization.
         """
-        if isinstance(image, np.ndarray):
-            imageTensor = self.__preprocessImage(image, inputWidth, inputHeight)
-        elif isinstance(image, torch.Tensor):
-            imageTensor = image.to(self.device)
-        elif isinstance(image, Image.Image):
-            image = np.array(image)
-            imageTensor = self.__preprocessImage(image, inputWidth, inputHeight)
-        else:
-            raise ValueError("Unsupported input image type. Supported types: numpy.ndarray, torch.Tensor, PIL.Image.Image")
-        
-        depthMap = self.forward(imageTensor)
+        image = torch.from_numpy(image).to(self.To)
+        image = self.__preprocessImage(image, inputWidth, inputHeight)
+        depthMap = self.forward(image)
 
         depthMap = depthMap.squeeze().cpu().detach().numpy()
-        depthMap = self.__postprocessDepthmap(depthMap, colormap)
-
+        depthMap = self.__postprocessDepthmap(depthMap, colormap, minDepth, maxDepth)
+        
         return depthMap
 
-    def __preprocessImage(self, 
-                        image: Union[Image.Image, np.ndarray, torch.Tensor], 
-                        inputWidth: int, 
-                        inputHeight: int, 
-                        mean: Tuple[float] = (0.485, 0.456, 0.406), 
-                        std: Tuple[float] = (0.229, 0.224, 0.225), 
-                        additionalTransforms: List[Any] = None,
-                        resize: bool = True,
-                        crop: bool = False,
-                        augmentations: List[Any] = None) -> torch.Tensor:
+    def __preprocessImage(self, image: Union[Image.Image, np.ndarray, torch.Tensor], inputWidth: int, inputHeight: int, mean: Tuple[float] = (0.485, 0.456, 0.406), std: Tuple[float] = (0.229, 0.224, 0.225), additionalTransforms: List[Any] = None, resize: bool = True, crop: bool = False, augmentations: List[Any] = None) -> torch.Tensor:
         """
-        Preprocesses the input image for model input.
+        Process an image to generate a depth map using the model.
 
-        Args:
-            image (Union[Image.Image, np.ndarray, torch.Tensor]): The input image.
-            inputWidth (int): The width of the input image.
-            inputHeight (int): The height of the input image.
-            mean (Tuple[float], optional): Mean values for normalization. Defaults to (0.485, 0.456, 0.406).
-            std (Tuple[float], optional): Standard deviation values for normalization. Defaults to (0.229, 0.224, 0.225).
-            additionalTransforms (List[Any], optional): Additional transformations to be applied. Defaults to None.
-            resize (bool, optional): Whether to resize the image. Defaults to True.
-            crop (bool, optional): Whether to center crop the image. Defaults to False.
-            augmentations (List[Any], optional): List of augmentations to apply. Defaults to None.
+        This method takes an input image, preprocesses it, computes the depth map using the model, and post-processes
+        the depth map for visualization.
 
-        Returns:
-            torch.Tensor: The preprocessed image tensor.
+        Parameters
+        ----------
+        image : Any
+            The input image data, expected in a format compatible with Torch tensors.
+        inputWidth : int
+            The width to resize the input image before processing.
+        inputHeight : int
+            The height to resize the input image before processing.
+        colormap : str
+            The colormap to apply to the depth map visualization ('grayscale', 'jet', etc.).
+        minDepth : float, optional
+            Minimum depth value for depth map visualization (default is None, auto-scaled).
+        maxDepth : float, optional
+            Maximum depth value for depth map visualization (default is None, auto-scaled).
+
+        Returns
+        -------
+        np.ndarray
+            The generated depth map as a NumPy array.
+
+        Notes
+        -----
+        - This method assumes the model (`self`) is capable of processing Torch tensors.
+        - The input image is resized to `(inputWidth, inputHeight)` before being fed into the model.
+        - The depth map is computed using the model's `forward` method.
+        - Postprocessing includes converting the depth map to a NumPy array and applying colormap visualization.
         """
         if additionalTransforms is None:
             additionalTransforms = []
@@ -789,6 +917,8 @@ class edepth(nn.Module):
         transformList = []
 
         if isinstance(image, np.ndarray):
+            if len(image.shape) == 3 and image.shape[2] == 3:
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) / 255.0
             image = Image.fromarray(image.astype(np.uint8))
         elif isinstance(image, torch.Tensor):
             if image.dim() == 4:
@@ -810,124 +940,78 @@ class edepth(nn.Module):
 
         transform = transforms.Compose(transformList)
 
-        return transform(image).unsqueeze(0)
+        return transform(image).unsqueeze(0).to(self.To)
 
-    def __postprocessDepthmap(self, 
-                              depthMap: torch.Tensor, 
-                              colormap: str) -> np.ndarray:
+    def __postprocessDepthmap(self, depthMap: torch.Tensor | np.ndarray, colormap: str = 'grayscale', minDepth: float = None, maxDepth: float = None) -> np.ndarray:
         """
-        Post-processes the depth map.
+        Postprocess a depth map for visualization.
 
-        Args:
-            `depthMap` (torch.Tensor): The depth map tensor.
-            `colormap` (str): The choice of colormap. Supported values are 'colorized' and 'grayscale'.
+        This method normalizes the input depth map, applies optional clipping to minDepth and maxDepth values,
+        and applies a colormap for visualization.
 
-        Returns:
-            `np.ndarray`: The post-processed depth map.
+        Parameters
+        ----------
+        depthMap : torch.Tensor or np.ndarray
+            The input depth map to be postprocessed.
+        colormap : str, optional
+            The colormap to apply to the depth map visualization ('grayscale', 'colorized', etc.) (default is 'grayscale').
+        minDepth : float, optional
+            Minimum depth value for depth map visualization (default is None, no clipping).
+        maxDepth : float, optional
+            Maximum depth value for depth map visualization (default is None, no clipping).
+
+        Returns
+        -------
+        np.ndarray
+            The postprocessed depth map as a NumPy array suitable for visualization.
+
+        Notes
+        -----
+        - If `depthMap` is a Torch tensor, it is converted to a NumPy array using `.detach().numpy()`.
+        - Depth values are normalized between 0 and 1.
+        - Clipping to `minDepth` and `maxDepth` values is applied if provided.
+        - Colormap choices include 'grayscale' (default) and 'colorized' (using the 'inferno' colormap).
         """
-        depthMap = depthMap.cpu().detach().numpy()
+        if isinstance(depthMap, torch.Tensor):
+            depthMap = depthMap.detach().numpy()
         depthMapNormalized = (depthMap - depthMap.min()) / (depthMap.max() - depthMap.min())
 
-        if self.minDepth is not None:
-            depthMapNormalized = np.maximum(depthMapNormalized, self.minDepth)
-        if self.maxDepth is not None:
-            depthMapNormalized = np.minimum(depthMapNormalized, self.maxDepth)
+        if minDepth is not None:
+            depthMapNormalized = np.maximum(depthMapNormalized, minDepth)
+        if maxDepth is not None:
+            depthMapNormalized = np.minimum(depthMapNormalized, maxDepth)
 
         if colormap == 'colorized':
-            depthMapVisualized = cv2.applyColorMap((depthMapNormalized * 255).astype(np.uint8), cv2.COLORMAP_JET)
+            depthMapVisualized = cv2.applyColorMap((depthMapNormalized * 255.0).astype(np.uint8), cv2.COLORMAP_INFERNO)
         elif colormap == 'grayscale':
-            depthMapVisualized = (depthMapNormalized * 255).astype(np.uint8)
+            depthMapVisualized = (depthMapNormalized * 255.0).astype(np.uint8)
 
         return depthMapVisualized
     
-    def __cutMix(self, 
-                batch: Tuple[torch.Tensor], 
-                alpha: float = 0.1) -> Tuple[torch.Tensor]:
+    def __getDevice(self) -> torch.DeviceObjType:
         """
-        Apply CutMix augmentation to a batch of input images and labels.
+        Determine and return the appropriate device for computation.
 
-        Args:
-            batch (Tuple[torch.Tensor]): A tuple containing input images and their corresponding labels.
-            alpha (float): The CutMix parameter controlling the extent of augmentation. Defaults to 0.1.
+        This method checks the availability of CUDA-enabled GPUs and MPS (Multi-Process Service), prioritizing GPU if
+        available. If neither CUDA GPU nor MPS is available, it defaults to CPU.
 
-        Returns:
-            Tuple[torch.Tensor]: A tuple containing the augmented input images and labels.
+        Returns
+        -------
+        torch.DeviceObjType
+            The torch device object representing the selected device ('cuda', 'mps', or 'cpu').
+
+        Notes
+        -----
+        - This method assumes the presence of Torch and checks for CUDA availability using `torch.cuda.is_available()`.
+        - If CUDA is available, the method moves the model (`self`) to GPU ('cuda') and returns 'cuda'.
+        - If MPS is available, it returns 'mps'.
+        - If neither CUDA GPU nor MPS is available, it defaults to CPU and returns 'cpu'.
         """
-        images, labels = batch
-        batchSize = images.size(0)
-        indices = torch.randperm(batchSize)
-        shuffledImages = images[indices]
-        shuffledLabels = labels[indices]
+        if torch.cuda.is_available():
+            self.cuda()
+            return torch.device('cuda'), 'cuda'
+        self.cpu()        
+        if torch.backends.mps.is_available():
+            return torch.device('mps'), 'mps'
 
-        lambdaParam = np.random.beta(alpha, alpha)
-        cutRatio = np.sqrt(1.0 - lambdaParam)
-
-        cutWidth = int(images.size(2) * cutRatio)
-        cutHeight = int(images.size(3) * cutRatio)
-
-        centerX = np.random.randint(images.size(2))
-        centerY = np.random.randint(images.size(3))
-
-        boundBoxTopLeftX = np.clip(centerX - cutWidth // 2, 0, images.size(2))
-        boundBoxTopLeftY = np.clip(centerY - cutHeight // 2, 0, images.size(3))
-        boundBoxBottomRightX = np.clip(centerX + cutWidth // 2, 0, images.size(2))
-        boundBoxBottomRightY = np.clip(centerY + cutHeight // 2, 0, images.size(3))
-
-        images[:, :, boundBoxTopLeftX:boundBoxBottomRightX, boundBoxTopLeftY:boundBoxBottomRightY] = shuffledImages[:, :, boundBoxTopLeftX:boundBoxBottomRightX, boundBoxTopLeftY:boundBoxBottomRightY]
-        labels = (1 - lambdaParam) * labels + lambdaParam * shuffledLabels
-
-        return images, labels
-
-    def __mixUp(self, 
-                batch: Tuple[torch.Tensor], 
-                alpha: float = 0.1) -> Tuple[torch.Tensor]:
-        """
-        Apply MixUp augmentation to a batch of input images and labels.
-
-        Args:
-            batch (Tuple[torch.Tensor]): A tuple containing input images and their corresponding labels.
-            alpha (float): The MixUp parameter controlling the extent of augmentation. Defaults to 0.1.
-
-        Returns:
-            Tuple[torch.Tensor]: A tuple containing the augmented input images and labels.
-        """
-        images, labels = batch
-        batchSize = images.size(0)
-        indices = torch.randperm(batchSize)
-        shuffledImages = images[indices]
-        shuffledLabels = labels[indices]
-
-        lambdaParam = np.random.beta(alpha, alpha)
-        images = lambdaParam * images + (1 - lambdaParam) * shuffledImages
-        labels = lambdaParam * labels + (1 - lambdaParam) * shuffledLabels
-
-        return images, labels
-
-    def __selectAugmentation(self, 
-                            batch: Tuple[torch.Tensor], 
-                            alpha: float = 1.0) -> Tuple[torch.Tensor]:
-        """
-        Randomly selects an augmentation technique for the given batch of images and labels.
-
-        Args:
-            `batch` (Tuple[torch.Tensor]): A tuple containing images and corresponding labels.
-            `alpha` (float, optional): The alpha parameter for MixUp or CutMix augmentation. Defaults to 1.0.
-
-        Returns:
-            `Tuple[torch.Tensor]`: A tuple containing augmented images and labels based on 
-                the selected augmentation technique.
-        """
-        REGULAR = 0.6
-        CUTMIX = 0.2
-        MIXUP = 0.2
-
-        images, labels = batch
-
-        rand = random.random() 
-
-        if rand < REGULAR:
-            return images, labels
-        elif rand < REGULAR + CUTMIX:
-            return self.__cutMix((images, labels), alpha)
-        else:
-            return self.__mixUp((images, labels), alpha)
+        return torch.device('cpu'), 'cpu'
