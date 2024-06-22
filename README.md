@@ -56,7 +56,7 @@ Below are visualizations of input images and their corresponding output depth ma
 *Output Colorized Depth Map*
 estimation time: 0.1526861349993851 seconds
 
-![Sample 1 Grayscale Depth Map](output/graysacle/1500447202405080310499988_pred.jpg)
+![Sample 1 Grayscale Depth Map](output/grayscale/1500447202405080310499988_pred.jpg)
 *Output Grayscale Depth Map*
 estimation time: 0.1276703309995355 seconds
 
@@ -67,7 +67,7 @@ estimation time: 0.1276703309995355 seconds
 *Output Colorized Depth Map*
 estimation time: 0.1332030850026058 seconds
 
-![Sample 2 Grayscale Depth Map](output/graysacle/1500938202405080311264197_pred.jpg)
+![Sample 2 Grayscale Depth Map](output/grayscale/1500938202405080311264197_pred.jpg)
 *Output Grayscale Depth Map*
 estimation time: 0.14070451999577926 seconds
 
