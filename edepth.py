@@ -618,6 +618,7 @@ class edepth(nn.Module):
         if source == 'image':
             image = cv2.imread(inputFilePath)
             depthMap = self.__processImage(image, resize[1], resize[0], colormap, minDepth, maxDepth)
+            depthMap = cv2.resize(depthMap, (image.shape[1], image.shape[0]))
 
             if show:
                 cv2.imshow('edepth - image', depthMap)
@@ -625,7 +626,6 @@ class edepth(nn.Module):
                 cv2.destroyAllWindows()
 
             if save:
-                
                 outputPath = os.path.join(outputDir, 'colorized', f'{outputFilename}.{outputFormat}') if colormap == 'colorized' else os.path.join(outputDir, 'grayscale', f'{outputFilename}.{outputFormat}')
                 cv2.imwrite(outputPath, depthMap)
         
@@ -653,7 +653,7 @@ class edepth(nn.Module):
                 depthMap = self.__processImage(frame, resize[1], resize[0], colormap, minDepth, maxDepth)
 
                 if show:
-                    depthMapResized = cv2.cvtColor(cv2.resize(depthMap, (frameWidth // 2, frameHeight // 2)), cv2.COLOR_GRAY2BGR)
+                    depthMapResized = cv2.resize(depthMap, (frameWidth // 2, frameHeight // 2))
                     frameResized = cv2.resize(frame, (frameWidth // 2, frameHeight // 2))
                     cv2.imshow('edepth - video', np.hstack((frameResized, depthMapResized)))
                     if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -983,9 +983,9 @@ class edepth(nn.Module):
             depthMapNormalized = np.minimum(depthMapNormalized, maxDepth)
 
         if colormap == 'colorized':
-            depthMapVisualized = cv2.applyColorMap((depthMapNormalized * 255.0).astype(np.uint8), cv2.COLORMAP_INFERNO)
+            depthMapVisualized = cv2.applyColorMap((depthMapNormalized * 255.0).astype(np.uint8), cv2.COLORMAP_MAGMA)
         elif colormap == 'grayscale':
-            depthMapVisualized = (depthMapNormalized * 255.0).astype(np.uint8)
+            depthMapVisualized = cv2.applyColorMap((depthMapNormalized * 255.0).astype(np.uint8), cv2.COLORMAP_BONE)
 
         return depthMapVisualized
     
