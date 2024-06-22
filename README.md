@@ -107,7 +107,7 @@ Supports images, videos, and live feeds, providing a comprehensive solution for 
 ### Image Input
 
 - **Speed**: Processes images at 21 images per second.
-- **Accuracy**: Achieves an average accuracy of 73% on 954 images dataset adn 96 epochs of learning.
+- **Accuracy**: Achieves an average accuracy of 73% on 954 images dataset with 96 epochs of learning.
 
 ### Video Input
 
