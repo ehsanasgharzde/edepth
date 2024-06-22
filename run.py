@@ -1,66 +1,47 @@
+import os
+import time
+
 from edepth import edepth
+from utilities import Dataset, Sample
 
-from typing import Any
-
-import torch
-import torch.utils.data
-import torchvision.transforms as transforms
-from PIL import Image
 from sklearn.model_selection import train_test_split as trainTestSplit
-
 import pandas as pd
-import numpy as np
 
-
-
-class Dataset(torch.utils.data.Dataset):
-    def __init__(self, dataframe: pd.DataFrame, inputWidth: int, inputHeight: int) -> None:
-        self.dataframe = dataframe
-        self.inputWidth = inputWidth
-        self.inputHeight = inputHeight
-        self.transform = transforms.Compose([
-            transforms.Resize((self.inputHeight, self.inputWidth), antialias=True),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-        ])
-
-    def __len__(self) -> int:
-        return len(self.dataframe)
     
-    def __getitem__(self, index: int) -> Any:
-        entryPath = self.dataframe.iloc[index, 0]
-        targetPath = self.dataframe.iloc[index, 1]
+# datasetDir = os.path.join(os.getcwd(), 'dataset/')
+checkpointDir = os.path.join(os.getcwd(), 'checkpoints/')
+inputDir = os.path.join(os.getcwd(), 'input/')
+outputDir = os.path.join(os.getcwd(), 'output/')
 
-        entry = np.load(entryPath)
-        target = np.load(targetPath)
+# dataframe = pd.read_csv(datasetDir)
+# train, validate = trainTestSplit(dataframe, test_size=0.2, random_state=42)
+# trainset = Dataset(train, 224, 224)
+# validationset = Dataset(validate, 224, 224)
 
-        if entry.ndim == 4:
-            entry = entry[0]
-        if entry.ndim == 3 and entry.shape[-1] == 3:
-            entry = Image.fromarray(entry.astype(np.uint8))
+inputs = Sample(inputDir)
 
-        if target.ndim == 4:
-            target = target[0]
-        if target.ndim == 3 and target.shape[-1] == 3:
-            target = Image.fromarray(target.astype(np.uint8))
-        elif target.ndim == 2:
-            target = np.expand_dims(target, axis=2)
-            target = Image.fromarray(np.repeat(target, 3, axis=2).astype(np.uint8))
 
-        entry = self.transform(entry)
-        target = self.transform(target)
-
-        return entry, target
-    
-dataDir = r"/home/ehsanasgharzde/Desktop/Projects/depth/dataset.csv"
-dataframe = pd.read_csv(dataDir)
-
-train, validate = trainTestSplit(dataframe, test_size=0.2, random_state=42)
-
-trainset = Dataset(train, 224, 224)
-validationset = Dataset(validate, 224, 224)
-
-model = edepth()
+growthRate = 32
+neurons = 512
+model = edepth(growthRate=growthRate,  neurons=neurons)
 
 if __name__ == "__main__":
-    model.etrain(trainset, validationset, 50, batchSize=32)
+    # model.etrain(trainset=trainset, validationset=validationset, epochs=1000, batchSize=16, earlyStoppingPatience=100, gradientClip=2.0, checkpointPath=checkpointDir)
+    model.eload(os.path.join(checkpointDir, 'ep-96-val-0.27274127925435704.pt'))
+
+    # model.egenerate(source='live', outputDir=outputDir, outputFilename=f'_pred', resize=(224, 224), show=True, colormap='grayscale')
+
+    model.egenerate(source='video', inputFilePath='/home/ehsanasgharzde/Desktop/Projects/edepth/input/0001.mp4', outputDir=outputDir, outputFilename=f'_pred', resize=(224, 224), show=True, colormap='grayscale')
+
+    # totalSec, totalImg = 0, 0
+    # for index, imagePath in enumerate(inputs):
+    #     imageName = imagePath.replace("\\", "/").split("/")[-1].split(".")[0]
+    #     print(index, "- Processing", imageName, end=" - ")
+    #     startTime = time.monotonic()
+    #     model.egenerate(source='image', inputFilePath=imagePath, outputDir=outputDir, outputFilename=f'{imageName}_pred', resize=(224, 224), save=True, colormap='grayscale')
+    #     endTime = time.monotonic()
+    #     totalSec += endTime - startTime 
+    #     totalImg += 1
+    #     print("Process finished in", endTime - startTime, "seconds.")
+
+    # print(f"\nGenerated total {totalImg} images in {totalSec} seconds.")
