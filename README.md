@@ -42,6 +42,8 @@ The following hyperparameters were used to achieve the model's performance menti
 
 - **Epochs Completed**: 96
 - **Validation Loss at 96th Epoch**: 0.27274127925435704
+
+**Model State**: [Download](https://ehsanasgharzde.ir/assets/pt/ep-96-val-0.27274127925435704.pt) and place in `checkpoints` folder.
   
 ## Samples
 
