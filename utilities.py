@@ -13,7 +13,7 @@ import numpy as np
 class Sample(Dataset):
     def __init__(self, dataDir):
         self.dataDir = dataDir
-        self.images = [os.path.join(self.dataDir, f) for f in os.listdir(self.dataDir)]
+        self.images = [os.path.join(self.dataDir, f) for f  in os.listdir(self.dataDir)]
 
     def __len__(self):
         return len(self.images)

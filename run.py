@@ -31,17 +31,19 @@ if __name__ == "__main__":
 
     # model.egenerate(source='live', outputDir=outputDir, outputFilename=f'_pred', resize=(224, 224), show=True, colormap='grayscale')
 
-    model.egenerate(source='video', inputFilePath='/home/ehsanasgharzde/Desktop/Projects/edepth/input/0001.mp4', outputDir=outputDir, outputFilename=f'_pred', resize=(224, 224), show=True, colormap='grayscale')
+    # model.egenerate(source='video', inputFilePath='/home/ehsanasgharzde/Desktop/Projects/edepth/input/18839247834792849281913.mp4', outputDir=outputDir, outputFilename=f'18839247834792849281913_pred', resize=(224, 224), show=True, colormap='grayscale')
 
-    # totalSec, totalImg = 0, 0
-    # for index, imagePath in enumerate(inputs):
-    #     imageName = imagePath.replace("\\", "/").split("/")[-1].split(".")[0]
-    #     print(index, "- Processing", imageName, end=" - ")
-    #     startTime = time.monotonic()
-    #     model.egenerate(source='image', inputFilePath=imagePath, outputDir=outputDir, outputFilename=f'{imageName}_pred', resize=(224, 224), save=True, colormap='grayscale')
-    #     endTime = time.monotonic()
-    #     totalSec += endTime - startTime 
-    #     totalImg += 1
-    #     print("Process finished in", endTime - startTime, "seconds.")
+    totalSec, totalImg = 0, 0
+    for index, imagePath in enumerate(inputs):
+        if imagePath.replace("\\", "/").split("/")[-1].split(".")[-1] != 'jpg':
+            continue
+        imageName = imagePath.replace("\\", "/").split("/")[-1].split(".")[0]
+        print(index, "- Processing", imageName, end=" - ")
+        startTime = time.monotonic()
+        model.egenerate(source='image', inputFilePath=imagePath, outputDir=outputDir, outputFilename=f'{imageName}_pred', resize=(224, 224), save=True, colormap='grayscale')
+        endTime = time.monotonic()
+        totalSec += endTime - startTime 
+        totalImg += 1
+        print("Process finished in", endTime - startTime, "seconds.")
 
-    # print(f"\nGenerated total {totalImg} images in {totalSec} seconds.")
+    print(f"\nGenerated total {totalImg} images in {totalSec} seconds.")
