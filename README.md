@@ -1,7 +1,7 @@
 **_To aonaran, who is learning to perceive the profound depths of the world._**
 _from e_
 
-# edepth: Depth Estimation Model
+# edepth: Trainable Depth Estimation Model
 
 ## Overview
 
