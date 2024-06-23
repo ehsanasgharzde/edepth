@@ -258,7 +258,7 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Author
 
-- **Ehsan Asgharzadeh** - [GitHub](https://github.com/yourusername)
+- **Ehsan Asgharzadeh** - [GitHub](https://github.com/ehsanasgharzde), [LinkedIn](https://www.linkedin.com/in/ehsanasgharzde/)
 - **Contact**: [ehsanasgharzadeh.asg@gmail.com](mailto:ehsanasgharzadeh.asg@gmail.com)
 - **Version**: 1.0.1
 - **License**: [https://ehsanasgharzadeh.ir](https://ehsanasgharzadeh.ir) - [MIT](LICENSE)
