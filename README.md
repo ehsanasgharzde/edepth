@@ -1,4 +1,4 @@
-**_To aonaran, who is learning to perceive the profound depths of the world._**
+![image](https://github.com/ehsanasgharzde/edepth/assets/80165207/ff7fcc44-8d3d-4876-8bee-02a5b4c51f78)**_To aonaran, who is learning to perceive the profound depths of the world._**
 _from e_
 
 # edepth: Depth Estimation Model
@@ -110,10 +110,10 @@ The following hyperparameters, dataset, and hardware were used to achieve the mo
 
 ### Hardware
 
-- **Processor**: Intel Core i5 - 9400F
-- **GPU**: NVIDIA GeForce RTX 2060
-- **RAM**: 16 GB DDR4
-- **Storage**: 1 TB HDD + 512 GB SSD
+- **Processor**: Intel® Core™ i7-5500U CPU @ 2.40GHz × 4
+- **GPU**: HAINAN (, LLVM 15.0.7, DRM 2.50, 6.5.0-35-generic) / Mesa Intel® HD 
+- **RAM**: 16 GB
+- **Storage**: 1 TB SSD
 
 ### Training Performance
 
