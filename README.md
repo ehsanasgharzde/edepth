@@ -16,7 +16,7 @@ The edepth model architecture is inspired by DenseNet and U-Net architectures, w
 *General Architecture Overview*
 
 ### Encoder
-The encoder extracts features from the input data using multiple dense blocks, each containing convolutional layers with shared feature maps concatenated across layers. Transition layers follow dense blocks to reduce the number of channels and spatial dimensions.
+The encoder extracts features from the input data using multiple dense blocks, each containing convolutional layers with shared feature maps concatenated across layers. Translation layers follow dense blocks to reduce the number of channels and spatial dimensions.
 
 ### Fully Connected Layers
 Between the encoder and decoder, the model includes fully connected layers to process the features:
