@@ -11,6 +11,9 @@ edepth is a cutting-edge deep learning model designed to estimate depth from var
 
 The edepth model architecture is inspired by DenseNet and U-Net architectures, which have shown success in image segmentation tasks. The model consists of an encoder-decoder structure.
 
+![General Architecture](architecture/edepth-general-architecture.png)
+*General Architecture Overview*
+
 ### Encoder
 The encoder extracts features from the input data using multiple dense blocks, each containing convolutional layers with shared feature maps concatenated across layers. Transition layers follow dense blocks to reduce the number of channels and spatial dimensions.
 
