@@ -62,6 +62,14 @@ pip install -r requirements.txt
 
 ## Usage
 
+### Create Model
+
+```python
+from edepth import edepth
+
+model = edepth()
+```
+
 ### Loading a Pre-trained Model
 
 Load a pre-trained model for inference:
@@ -95,9 +103,6 @@ model.egenerate(source='live', show=True)
 Train the edepth model using the provided training data:
 
 ```python
-from edepth import edepth
-
-model = edepth()
 model.etrain(trainLoader, validationLoader, epochs=10)
 ```
 
