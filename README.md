@@ -22,15 +22,85 @@ Between the encoder and decoder, the model includes fully connected layers to pr
 ### Decoder
 The decoder reconstructs the depth map from the encoded features using upsampling layers.
 
+## Installation
+
+To install the required dependencies for running edepth, use the provided `requirements.txt` file. This file lists all necessary Python 3.12.* packages and their versions.
+
+```bash
+pip install -r requirements.txt
+```
+
+## Cloning and Setting Up the Model
+
+To clone the repository and set up edepth on your local machine, follow these steps:
+
+### Clone the Repository
+
+```bash
+git clone https://github.com/ehsanasgharzde/edepth.git
+cd edepth
+```
+
+### Install Dependencies
+
+Create a virtual environment and install the required packages:
+
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+pip install -r requirements.txt
+```
+
+## Usage
+
+### Loading a Pre-trained Model
+
+Load a pre-trained model for inference:
+
+```python
+model.eload('path/to/pretrained_model.pt')
+```
+
+### Generating Depth Maps
+
+#### From an Image
+
+```python
+model.egenerate(source='image', inputFilePath='path/to/image.jpg', show=True)
+```
+
+#### From a Video
+
+```python
+model.egenerate(source='video', inputFilePath='path/to/video.mp4', show=True)
+```
+
+#### From Live Camera Feed
+
+```python
+model.egenerate(source='live', show=True)
+```
+
+### Training the Model
+
+Train the edepth model using the provided training data:
+
+```python
+from edepth import edepth
+
+model = edepth()
+model.etrain(trainLoader, validationLoader, epochs=10)
+```
+
 ## Test Train Details
 
 ### Hyperparameters
 
-The following hyperparameters were used to achieve the model's performance mentioned further in the readme file:
+The following hyperparameters, dataset, and hardware were used to achieve the model's performance mentioned further in the readme file:
 
 - **Growth Rate**: 32
 - **Neurons**: 512
-- **Epochs**: 1000 (96 successfully completed epochs after reaching hardware limits)
+- **Epochs**: 1000 (96 successfully completed epochs after reaching hardware **temperature limits**)
 - **Batch Size**: 16
 - **Gradient Clip**: 2.0
 - **Optimizer**: `swats.SWATS(self.parameters(), lr=0.0001)`
@@ -38,12 +108,32 @@ The following hyperparameters were used to achieve the model's performance menti
 - **Loss**: `nn.MSELoss()`
 - **Scheduler**: `torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 'min', patience=100, factor=0.5)`
 
+### Hardware
+
+- **Processor**: Intel Core i5 - 9400F
+- **GPU**: NVIDIA GeForce RTX 2060
+- **RAM**: 16 GB DDR4
+- **Storage**: 1 TB HDD + 512 GB SSD
+
 ### Training Performance
 
 - **Epochs Completed**: 96
 - **Validation Loss at 96th Epoch**: 0.27274127925435704
 
+### Dataset
+
+The dataset for edepth was gathered by downloading videos from YouTube, with details available in this [Google Spreadsheet](https://docs.google.com/spreadsheets/d/1emitM6KBMgAKzhZJz0BxfTZmTI64PiG18hUpJhMpM8Q/edit?usp=sharing). The images and corresponding depth maps were created using the Marigold depth estimation model, available [here](https://github.com/prs-eth/Marigold).
+
+### Key Details:
+- **Number of Images and Labels (Depth Maps)**: 954
+- **Average Image Size** (resized to 224x224): 4.5MB
+- **Average Label (Depth Map) Size** (resized to 224x224): 6MB
+
+
 **Model State**: [Download](https://ehsanasgharzde.ir/assets/pt/ep-96-val-0.27274127925435704.pt) and place in `checkpoints` folder.
+
+**Note**: This model state was specifically trained for testing purposes on drone shots of cell tower antennas in daylight conditions. It may not be suitable for other use cases. Users are encouraged to train the model themselves for their specific applications and datasets to achieve optimal performance.
+
   
 ## Samples
 
@@ -84,6 +174,8 @@ edepth can process video files and generate depth maps for each frame. Here are 
 
 ### Performance Metrics
 
+**Note**: edepth calculates accuracy by comparing the predicted depth values to the true depth values for each pixel in the input image.
+
 - **Processing Speed**: edepth can process images at a rate of 21 images per second and videos at 25 frames per second.
 - **Accuracy**: The model achieves an average accuracy of 99% on standard depth estimation benchmarks.
 - **Model Size**: The edepth model has a total of 1.3 million parameters, making it efficient for both training and inference.
@@ -118,76 +210,6 @@ Supports images, videos, and live feeds, providing a comprehensive solution for 
 
 - **Speed**: Real-time processing with minimal latency.
 - **Accuracy**: Consistent accuracy for dynamic scenes.
-
-## Installation
-
-To install the required dependencies for running edepth, use the provided `requirements.txt` file. This file lists all necessary Python 3.12.* packages and their versions.
-
-```bash
-pip install -r requirements.txt
-```
-
-## Cloning and Setting Up the Model
-
-To clone the repository and set up edepth on your local machine, follow these steps:
-
-### Clone the Repository
-
-```bash
-git clone https://github.com/ehsanasgharzde/edepth.git
-cd edepth
-```
-
-### Install Dependencies
-
-Create a virtual environment and install the required packages:
-
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-pip install -r requirements.txt
-```
-
-## Usage
-
-### Training the Model
-
-Train the edepth model using the provided training data:
-
-```python
-from edepth import edepth
-
-model = edepth()
-model.etrain(trainLoader, validationLoader, epochs=10)
-```
-
-### Generating Depth Maps
-
-#### From an Image
-
-```python
-model.egenerate(source='image', inputFilePath='path/to/image.jpg', show=True)
-```
-
-#### From a Video
-
-```python
-model.egenerate(source='video', inputFilePath='path/to/video.mp4', show=True)
-```
-
-#### From Live Camera Feed
-
-```python
-model.egenerate(source='live', show=True)
-```
-
-### Loading a Pre-trained Model
-
-Load a pre-trained model for inference:
-
-```python
-model.eload('path/to/pretrained_model.pt')
-```
 
 ## Future Plans
 
