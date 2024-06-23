@@ -77,10 +77,10 @@ estimation time: 0.1332030850026058 seconds
 
 edepth can process video files and generate depth maps for each frame. Here are some example results:
 
-1. Original Video: [Link to Original Video](input/18839247834792849281913.mp4)
-2. Depth Map Video: [Link to Depth Map Video](output/video/18839247834792849281913.avi)
+1. Original Video: [Original Video](input/18839247834792849281913.mp4)
+2. Depth Map Video: [Depth Map Video](output/video/18839247834792849281913.avi)
 
-![Screen Record How edepth is Doing](output/screen-record.gif)
+![Screen Record on How edepth is Doing](output/screen-record.gif)
 
 ### Performance Metrics
 
@@ -240,7 +240,3 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 - **Contact**: [ehsanasgharzadeh.asg@gmail.com](mailto:ehsanasgharzadeh.asg@gmail.com)
 - **Version**: 1.0.1
 - **License**: [https://ehsanasgharzadeh.ir](https://ehsanasgharzadeh.ir) - [MIT](LICENSE)
-
----
-
-Feel free to adjust the content as necessary and add any specific details or sections you think are important. Don't forget to share it with me!
