@@ -161,9 +161,9 @@ class edepth(nn.Module):
             output = torch.cat([x, output], 1)
             return output
 
-    class _TransitionLayer(nn.Module):
+    class _TranslationLayer(nn.Module):
         """
-        A transition layer used in the edepth class.
+        A translation layer used in the edepth class.
 
         This layer consists of a convolutional layer followed by a max-pooling layer,
         designed to reduce the dimensions of the input data while changing the number
@@ -191,7 +191,7 @@ class edepth(nn.Module):
             Defines the forward pass of the transition layer.
         """
         def __init__(self, inputChannels, outputChannels, device):
-            super(edepth._TransitionLayer, self).__init__()
+            super(edepth._TranslationLayer, self).__init__()
 
             self.to(device)
             self.convolution = nn.Conv2d(inputChannels, outputChannels, kernel_size=1, device=device)
@@ -247,7 +247,7 @@ class edepth(nn.Module):
             self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
             self.denseBlocks = nn.ModuleList()
-            self.transitionLayers = nn.ModuleList()
+            self.translationLayers = nn.ModuleList()
 
             
             numChannels = growthRate
@@ -255,7 +255,7 @@ class edepth(nn.Module):
                 self.denseBlocks.append(edepth._DenseBlock(numChannels, growthRate, device=device))
                 numChannels += growthRate
                 if i != numLayers - 1:
-                    self.transitionLayers.append(edepth._TransitionLayer(numChannels, numChannels // 2, device=device))
+                    self.translationLayers.append(edepth._TranslationLayer(numChannels, numChannels // 2, device=device))
                     numChannels = numChannels // 2
             self.outputChannels = numChannels // 2
 
@@ -265,7 +265,7 @@ class edepth(nn.Module):
             for i, block in enumerate(self.denseBlocks):
                 output = block(output)
                 if i != len(self.denseBlocks) - 1:
-                    output = self.transitionLayers[i](output)
+                    output = self.translationLayers[i](output)
             return output
 
     class _Decoder(nn.Module):
