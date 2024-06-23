@@ -26,6 +26,11 @@ Between the encoder and decoder, the model includes fully connected layers to pr
 ### Decoder
 The decoder reconstructs the depth map from the encoded features using upsampling layers.
 
+![Detailed Architecture](architecture/edepth-detailed-architecture.png)
+
+*Detailed Architecture Overview*
+
+
 ## Installation
 
 To install the required dependencies for running edepth, use the provided `requirements.txt` file. This file lists all necessary Python 3.12.* packages and their versions.
