@@ -1,4 +1,4 @@
-![image](https://github.com/ehsanasgharzde/edepth/assets/80165207/ff7fcc44-8d3d-4876-8bee-02a5b4c51f78)**_To aonaran, who is learning to perceive the profound depths of the world._**
+**_To aonaran, who is learning to perceive the profound depths of the world._**
 _from e_
 
 # edepth: Depth Estimation Model
