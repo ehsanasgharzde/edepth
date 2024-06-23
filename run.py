@@ -29,9 +29,8 @@ if __name__ == "__main__":
     # model.etrain(trainset=trainset, validationset=validationset, epochs=1000, batchSize=16, earlyStoppingPatience=100, gradientClip=2.0, checkpointPath=checkpointDir)
     model.eload(os.path.join(checkpointDir, 'ep-96-val-0.27274127925435704.pt'))
 
-    # model.egenerate(source='live', outputDir=outputDir, outputFilename=f'_pred', resize=(224, 224), show=True, colormap='grayscale')
-
-    # model.egenerate(source='video', inputFilePath='/home/ehsanasgharzde/Desktop/Projects/edepth/input/18839247834792849281913.mp4', outputDir=outputDir, outputFilename=f'18839247834792849281913_pred', resize=(224, 224), show=True, colormap='grayscale')
+    # model.egenerate(source='live', outputDir=outputDir, outputFilename=102987810836401830811438, resize=(224, 224), show=True, save=True, colormap='grayscale')
+    # model.egenerate(source='video', inputFilePath='/home/ehsanasgharzde/Desktop/Projects/edepth/input/18839247834792849281913.mp4', outputDir=outputDir, outputFilename=18839247834792849281913, resize=(224, 224), show=True, save=True, colormap='grayscale')
 
     totalSec, totalImg = 0, 0
     for index, imagePath in enumerate(inputs):
@@ -40,7 +39,7 @@ if __name__ == "__main__":
         imageName = imagePath.replace("\\", "/").split("/")[-1].split(".")[0]
         print(index, "- Processing", imageName, end=" - ")
         startTime = time.monotonic()
-        model.egenerate(source='image', inputFilePath=imagePath, outputDir=outputDir, outputFilename=f'{imageName}_pred', resize=(224, 224), save=True, colormap='grayscale')
+        model.egenerate(source='image', inputFilePath=imagePath, outputDir=outputDir, outputFilename=imageName, resize=(224, 224), save=True, colormap='grayscale')
         endTime = time.monotonic()
         totalSec += endTime - startTime 
         totalImg += 1

@@ -161,7 +161,7 @@ class edepth(nn.Module):
             output = torch.cat([x, output], 1)
             return output
 
-    class _TranslationLayer(nn.Module):
+    class _TransitionLayer(nn.Module):
         """
         A translation layer used in the edepth class.
 
@@ -191,7 +191,7 @@ class edepth(nn.Module):
             Defines the forward pass of the transition layer.
         """
         def __init__(self, inputChannels, outputChannels, device):
-            super(edepth._TranslationLayer, self).__init__()
+            super(edepth._TransitionLayer, self).__init__()
 
             self.to(device)
             self.convolution = nn.Conv2d(inputChannels, outputChannels, kernel_size=1, device=device)
@@ -247,7 +247,7 @@ class edepth(nn.Module):
             self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
             self.denseBlocks = nn.ModuleList()
-            self.translationLayers = nn.ModuleList()
+            self.transitionLayers = nn.ModuleList()
 
             
             numChannels = growthRate
@@ -255,7 +255,7 @@ class edepth(nn.Module):
                 self.denseBlocks.append(edepth._DenseBlock(numChannels, growthRate, device=device))
                 numChannels += growthRate
                 if i != numLayers - 1:
-                    self.translationLayers.append(edepth._TranslationLayer(numChannels, numChannels // 2, device=device))
+                    self.transitionLayers.append(edepth._TransitionLayer(numChannels, numChannels // 2, device=device))
                     numChannels = numChannels // 2
             self.outputChannels = numChannels // 2
 
@@ -265,7 +265,7 @@ class edepth(nn.Module):
             for i, block in enumerate(self.denseBlocks):
                 output = block(output)
                 if i != len(self.denseBlocks) - 1:
-                    output = self.translationLayers[i](output)
+                    output = self.transitionLayers[i](output)
             return output
 
     class _Decoder(nn.Module):
@@ -618,16 +618,18 @@ class edepth(nn.Module):
         if source == 'image':
             image = cv2.imread(inputFilePath)
             depthMap = self.__processImage(image, resize[1], resize[0], colormap, minDepth, maxDepth)
-            depthMap = cv2.resize(depthMap, (image.shape[1], image.shape[0]))
+            depthMapResized = cv2.resize(depthMap, (image.shape[1], image.shape[0]))
 
             if show:
-                cv2.imshow('edepth - image', depthMap)
+                depthMapToShow = cv2.resize(depthMap, (image.shape[1] // 2, image.shape[0] // 2))
+                imageToShow = cv2.resize(image, (image.shape[1] // 2, image.shape[0] // 2))
+                cv2.imshow('edepth - image', np.hstack((imageToShow, depthMapToShow)))
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
 
             if save:
-                outputPath = os.path.join(outputDir, 'colorized', f'{outputFilename}.{outputFormat}') if colormap == 'colorized' else os.path.join(outputDir, 'grayscale', f'{outputFilename}.{outputFormat}')
-                cv2.imwrite(outputPath, depthMap)
+                outputPath = os.path.join(outputDir, 'colorized', f'{outputFilename}.{outputFormat}') if colormap == 'colorized' else os.path.join(outputDir, 'grayscale', f'{outputFilename}_pred.{outputFormat}')
+                cv2.imwrite(outputPath, depthMapResized)
         
         elif source == 'video':
             cap = cv2.VideoCapture(inputFilePath)
@@ -637,8 +639,8 @@ class edepth(nn.Module):
 
             out = None
             if save:
-                outputPath = os.path.join(outputDir, 'video', f'{outputFilename}.avi')
-                out = cv2.VideoWriter(outputPath, cv2.VideoWriter_fourcc(*'DIVX'), fps, (frameWidth, frameHeight))
+                outputPath = os.path.join(outputDir, 'video', f'{outputFilename}_vidPred.mp4')
+                out = cv2.VideoWriter(outputPath, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frameWidth, frameHeight))
 
             while True:
                 ret, frame = cap.read()
@@ -651,16 +653,17 @@ class edepth(nn.Module):
                     break
                 
                 depthMap = self.__processImage(frame, resize[1], resize[0], colormap, minDepth, maxDepth)
+                depthMapResized = cv2.resize(depthMap, (frameWidth, frameHeight))
 
                 if show:
-                    depthMapResized = cv2.resize(depthMap, (frameWidth // 2, frameHeight // 2))
-                    frameResized = cv2.resize(frame, (frameWidth // 2, frameHeight // 2))
-                    cv2.imshow('edepth - video', np.hstack((frameResized, depthMapResized)))
+                    depthMapToShow = cv2.resize(depthMap, (frameWidth // 2, frameHeight // 2))
+                    frameToShow = cv2.resize(frame, (frameWidth // 2, frameHeight // 2))
+                    cv2.imshow('edepth - video', np.hstack((frameToShow, depthMapToShow)))
                     if cv2.waitKey(1) & 0xFF == ord('q'):
                         break
 
                 if save:
-                    out.write(depthMap)
+                    out.write(depthMapResized)
 
             cap.release()
             if save:
@@ -669,6 +672,14 @@ class edepth(nn.Module):
         
         elif source == 'live':
             cap = cv2.VideoCapture(0)
+            frameWidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            frameHeight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = int(cap.get(cv2.CAP_PROP_FPS))
+
+            out = None
+            if save:
+                outputPath = os.path.join(outputDir, 'video', f'{outputFilename}_feedPred.mp4')
+                out = cv2.VideoWriter(outputPath, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frameWidth * 2, frameHeight))
 
             while True:
                 ret, frame = cap.read()
@@ -677,12 +688,16 @@ class edepth(nn.Module):
                     break
 
                 depthMap = self.__processImage(frame, resize[1], resize[0], colormap, minDepth, maxDepth)
+                depthMapResized = cv2.resize(depthMap, (frameWidth, frameHeight))
+                combinedFrame = np.hstack((frame, depthMapResized))
 
                 if show:
-                    depthMapResized = cv2.cvtColor(cv2.resize(depthMap, (frame.shape[1], frame.shape[0])), cv2.COLOR_GRAY2BGR)
-                    cv2.imshow('edepth - live feed', np.hstack((frame, depthMapResized)))
+                    cv2.imshow('edepth - live feed', combinedFrame)
                     if cv2.waitKey(1) & 0xFF == ord('q'):
                         break
+
+                if save:
+                    out.write(combinedFrame)
 
             cap.release()
             cv2.destroyAllWindows()
