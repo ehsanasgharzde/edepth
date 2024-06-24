@@ -7,7 +7,7 @@ _from e_
 
 edepth is a cutting-edge deep learning model designed to estimate depth from various input sources, including single images, videos, and live camera feeds. Depth estimation is a crucial task in computer vision, with applications in autonomous driving, robotics, augmented reality, and more. edepth addresses this task by predicting the distance of objects from the camera using convolutional neural networks (CNNs).
 
-## Model Architecture
+## Model Architecture and Pipeline
 
 The edepth model architecture is inspired by DenseNet and U-Net architectures, which have shown success in image segmentation tasks. The model consists of an encoder-decoder structure.
 
