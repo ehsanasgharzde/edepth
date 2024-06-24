@@ -16,15 +16,34 @@ The edepth model architecture is inspired by DenseNet and U-Net architectures, w
 *General Architecture Overview*
 
 ### Encoder
-The encoder extracts features from the input data using multiple dense blocks, each containing convolutional layers with shared feature maps concatenated across layers. Translation layers follow dense blocks to reduce the number of channels and spatial dimensions.
+
+The encoder extracts features from the input data using multiple dense blocks, each containing convolutional layers with shared feature maps concatenated across layers. Transition layers follow dense blocks to reduce the number of channels and spatial dimensions:
+
+- **initialConvolution**: Convolution layer with kernel size 5.
+- **pool**: Max pooling layer with kernel size 2 and stride 2.
+- **denseBlocks**: Sequence of dense blocks for feature extraction.
+- **transitionLayers**: Sequence of transition layers to reduce channel dimensions.
 
 ### Fully Connected Layers
+
 Between the encoder and decoder, the model includes fully connected layers to process the features:
-- `fullyConnectedI`: Linear layer transforming the encoder output to a fixed-size vector.
-- `fullyConnectedII`: Linear layer transforming the fixed-size vector back to the size expected by the decoder.
+
+- **fullyConnectedI**: Linear layer transforming the encoder output to a fixed-size vector.
+- **fullyConnectedII**: Linear layer transforming the fixed-size vector back to the size expected by the decoder.
 
 ### Decoder
-The decoder reconstructs the depth map from the encoded features using upsampling layers.
+
+The decoder reconstructs the depth map from the encoded features using upsampling layers:
+
+- **upSampleI**: Upsampling layer with scale factor 2.
+- **convI**: Convolution layer with kernel size 3.
+- **upSampleII**: Upsampling layer with scale factor 2.
+- **convII**: Convolution layer with kernel size 3.
+- **upSampleIII**: Upsampling layer with scale factor 2.
+- **convIII**: Convolution layer with kernel size 3.
+- **upSampleIV**: Upsampling layer with scale factor 2.
+- **convIV**: Convolution layer with kernel size 3, outputting a single-channel depth map.
+
 
 ![Detailed Architecture](architecture/edepth-detailed-architecture.png)
 
