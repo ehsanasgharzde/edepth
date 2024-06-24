@@ -103,9 +103,10 @@ model.egenerate(source='live', show=True)
 Train the edepth model using the provided training data:
 
 ```python
+import os
+import pandas
 from utilities import Dataset
 from sklearn.model_selection import train_test_split
-import pandas
 
     
 datasetDir = os.path.join(os.getcwd(), 'dataset/')
