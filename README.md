@@ -122,15 +122,13 @@ model.egenerate(source='live', show=True)
 Train the edepth model using the provided training data:
 
 ```python
-import os
 import pandas
 from utilities import Dataset
 from sklearn.model_selection import train_test_split
 
     
-datasetDir = os.path.join(os.getcwd(), 'dataset/')
-dataframe = pandas.read_csv(datasetDir)
-train, validate = train_test_split(dataframe, test_size=0.2, random_state=42)
+dataset = pandas.read_csv('path/to/dataset.csv')
+train, validate = train_test_split(dataset, test_size=0.2, random_state=42)
 trainset, validationset = Dataset(train, 224, 224), Dataset(validate, 224, 224)
 
 model.etrain(trainset, validationset, epochs=100)
