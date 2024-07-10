@@ -9,7 +9,7 @@ edepth is an open-source, cutting-edge deep learning model designed to estimate 
 
 ## Model Architecture and Pipeline
 
-The edepth model architecture is inspired by DenseNet and U-Net architectures, which have shown success in image segmentation tasks. The model consists of an encoder-decoder structure.
+The edepth model architecture is inspired by [DenseNet](https://www.geeksforgeeks.org/densenet-explained/) and [U-Net](https://www.geeksforgeeks.org/u-net-architecture-explained/) architectures, which have shown success in image segmentation tasks. The model consists of an encoder-decoder structure.
 
 ![General Architecture](architecture/edepth-general-architecture.png)
 
