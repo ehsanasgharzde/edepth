@@ -5,7 +5,7 @@ _from e_
 
 ## Overview
 
-edepth is a open-source cutting-edge deep learning model designed to estimate depth from various input sources, including single images, videos, and live camera feeds. Depth estimation is a crucial task in computer vision, with applications in autonomous driving, robotics, augmented reality, and more. edepth addresses this task by predicting the distance of objects from the camera using convolutional neural networks (CNNs).
+edepth is an open-source, cutting-edge deep learning model designed to estimate depth from various input sources, including single images, videos, and live camera feeds. Depth estimation is a crucial task in computer vision, with applications in autonomous driving, robotics, augmented reality, and more. edepth addresses this task by predicting the distance of objects from the camera using convolutional neural networks (CNNs).
 
 ## Model Architecture and Pipeline
 
