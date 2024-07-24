@@ -292,7 +292,7 @@ Contributions to improve the model's performance or add new features are highly 
 4. Push to the branch (`git push origin feature-branch`)
 5. Create a new Pull Request
 
-For any questions, suggestions, or collaboration opportunities, feel free to reach out to [Ehsan Asgharzadeh](https://ehsanasgharzadeh.asg@gmail.com).
+For any questions, suggestions, or collaboration opportunities, feel free to reach out to [me](https://ehsanasgharzadeh.asg@gmail.com).
 
 ## License
 
@@ -303,4 +303,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 - **Ehsan Asgharzadeh** - [GitHub](https://github.com/ehsanasgharzde), [LinkedIn](https://www.linkedin.com/in/ehsanasgharzde/)
 - **Contact**: [ehsanasgharzadeh.asg@gmail.com](mailto:ehsanasgharzadeh.asg@gmail.com)
 - **Version**: 1.0.1
-- **License**: [https://ehsanasgharzadeh.ir](https://ehsanasgharzadeh.ir) - [MIT](LICENSE)
+- **License**: [ehsanasgharzadeh.ir](https://ehsanasgharzadeh.ir) - [MIT](LICENSE)
