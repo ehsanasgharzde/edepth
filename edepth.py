@@ -42,7 +42,7 @@ class edepth(nn.Module):
     ----------
     __author__ : Ehsan Asgharzadeh
     __copyright__ : Copyright (C) 2024 edepth
-    __license__ : https://ehsanasgharzde.ir
+    __license__ : https://github.com/ehsanasgharzde/edepth/LICENSE
     __contact__ : https://ehsanasgharzadeh.asg@gmail.com
     __date__ : 2024 Jun 22
     __version__ : 1.0.1
