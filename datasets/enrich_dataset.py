@@ -1,5 +1,6 @@
 # FILE: datasets/enrich_dataset.py
 # ehsanasgharzde - ENRICH DATASET
+# hosseinsolymanzadeh - PROPER COMMENTING
 
 import os
 import glob
@@ -22,54 +23,69 @@ class ENRICHDataset(Dataset):
                  domain_adaptation: bool = False, dataset_type: str = 'all'):
         super().__init__()
         
+        # Initialize dataset configuration
         self.data_root = Path(data_root)
         self.split = split
         self.img_size = img_size
         self.min_depth = min_depth
         self.max_depth = max_depth
         self.depth_scale = depth_scale
-        self.augmentation = augmentation and split == 'train'
+        self.augmentation = augmentation and split == 'train'  # Enable augmentation only during training
         self.cache = cache
         self.validate_data = validate_data
         self.domain_adaptation = domain_adaptation
         self.dataset_type = dataset_type
         
+        # Check that initialization parameters are valid
         self._validate_initialization_parameters()
         
+        # Optionally validate presence and structure of dataset folders
         if validate_data:
             self._validate_dataset_structure()
         
+        # Load sample metadata from dataset
         self.samples = self._load_samples()
         
+        # Define transformation pipeline for RGB and depth images
         self.rgb_transform = self._build_rgb_transform()
         self.depth_transform = self._build_depth_transform()
         
+        # Optional in-memory cache for faster access
         self._cache_data = {} if cache else None
         
+        # Log dataset initialization
         logger.info(f"Initialized ENRICH dataset: {len(self.samples)} samples for {split} split")
     
     def _validate_initialization_parameters(self):
+        # Check if the data root directory exists
         if not self.data_root.exists():
             raise FileNotFoundError(f"Data root not found: {self.data_root}")
         
+        # Validate the split argument
         if self.split not in ['train', 'val', 'test']:
             raise ValueError(f"Invalid split: {self.split}")
         
+        # Ensure image size is a tuple of two integers
         if not isinstance(self.img_size, tuple) or len(self.img_size) != 2:
             raise ValueError("img_size must be tuple of (height, width)")
         
+        # Check logical range of depth values
         if not (0 < self.min_depth < self.max_depth):
             raise ValueError("min_depth must be less than max_depth")
         
+        # Depth scale must be a positive number
         if self.depth_scale <= 0:
             raise ValueError("depth_scale must be positive")
         
+        # Validate dataset type
         if self.dataset_type not in ['all', 'aerial', 'square', 'statue']:
             raise ValueError(f"Invalid dataset_type: {self.dataset_type}")
     
     def _validate_dataset_structure(self):
+        # List of expected dataset subfolders
         required_datasets = ['ENRICH-Aerial', 'ENRICH-Square', 'ENRICH-Statue']
         
+        # Determine which datasets to validate
         if self.dataset_type == 'all':
             check_datasets = required_datasets
         else:
@@ -81,170 +97,208 @@ class ENRICHDataset(Dataset):
                 logger.warning(f"Dataset directory not found: {dataset_path}")
                 continue
             
+            # Check that required subdirectories exist
             required_dirs = ['images', 'depth/exr']
             for req_dir in required_dirs:
                 if not (dataset_path / req_dir).exists():
                     logger.warning(f"Required directory missing: {dataset_path / req_dir}")
     
     def _load_samples(self) -> List[Dict[str, Any]]:
+        # Initialize sample list
         samples = []
-        
+
         dataset_dirs = []
+
+        # Determine which dataset directories to load based on dataset_type
         if self.dataset_type == 'all':
             dataset_dirs = [d for d in self.data_root.iterdir() if d.is_dir() and d.name.startswith('ENRICH-')]
         else:
             dataset_path = self.data_root / f'ENRICH-{self.dataset_type.title()}'
             if dataset_path.exists():
                 dataset_dirs = [dataset_path]
-        
+
+        # Raise error if no dataset directories found
         if not dataset_dirs:
             raise FileNotFoundError(f"No ENRICH dataset directories found in {self.data_root}")
-        
-        missing_files = 0
-        
+
+        missing_files = 0  # Counter for missing depth files
+
+        # Iterate through dataset directories
         for dataset_dir in dataset_dirs:
             dataset_name = dataset_dir.name
-            
+
             images_dir = dataset_dir / 'images'
             depth_dir = dataset_dir / 'depth' / 'exr'
-            
+
+            # Check if required subdirectories exist
             if not images_dir.exists() or not depth_dir.exists():
                 logger.warning(f"Missing directories in {dataset_name}")
                 continue
             
+            # Load and sort all image files (JPG format)
             image_files = sorted(images_dir.glob('*.jpg'))
-            
+
+            # Iterate through image files and check for corresponding depth files
             for image_file in image_files:
                 base_name = image_file.stem
                 depth_file = depth_dir / f'{base_name}_depth.exr'
-                
+
+                # Skip sample if depth file is missing
                 if not depth_file.exists():
                     missing_files += 1
                     continue
                 
+                # Construct sample dictionary
                 sample = {
                     'rgb': image_file,
                     'depth': depth_file,
                     'dataset': dataset_name,
                     'basename': base_name
                 }
-                
+
+                # Optionally validate sample integrity
                 if self.validate_data and not self._validate_sample_integrity(sample):
                     continue
                 
+                # Add valid sample to list
                 samples.append(sample)
-        
+
+        # Log number of missing depth files, if any
         if missing_files > 0:
             logger.warning(f"Missing depth files: {missing_files}")
-        
+
+        # Raise error if no valid samples were found
         if not samples:
             raise RuntimeError("No valid samples found")
-        
+
+        # Split samples based on current split ('train', 'val', 'test')
         split_samples = self._get_split_samples(samples)
-        
+
+        # Log how many samples were loaded from how many datasets
         logger.info(f"Loaded {len(split_samples)} valid samples from {len(dataset_dirs)} datasets")
         return split_samples
-    
+            
     def _get_split_samples(self, samples: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        # Return split-specific subset of samples
         if self.split == 'train':
-            return samples[:int(len(samples) * 0.8)]
+            return samples[:int(len(samples) * 0.8)]  # First 80% for training
         elif self.split == 'val':
-            return samples[int(len(samples) * 0.8):int(len(samples) * 0.9)]
+            return samples[int(len(samples) * 0.8):int(len(samples) * 0.9)]  # Next 10% for validation
         else:
-            return samples[int(len(samples) * 0.9):]
-    
+            return samples[int(len(samples) * 0.9):]  # Remaining 10% for test
+
     def _validate_sample_integrity(self, sample: Dict[str, Any]) -> bool:
         try:
+            # Ensure RGB and depth files exist and are not empty
             required_files = [sample['rgb'], sample['depth']]
-            
             for file_path in required_files:
                 if not file_path.exists() or file_path.stat().st_size < 1024:
                     logger.warning(f"Invalid file: {file_path}")
                     return False
             
+            # Try opening the RGB image to check for corruption
             with Image.open(sample['rgb']) as img:
                 img.verify()
             
             return True
-            
         except Exception as e:
+            # Log any exception encountered during validation
             logger.error(f"Sample integrity check failed: {e}")
             return False
-    
+
     def _load_rgb(self, path: Path) -> np.ndarray:
-        if self.cache and path in self._cache_data: #type: ignore 
-            return self._cache_data[path] #type: ignore 
+        # Return cached RGB image if available
+        if self.cache and path in self._cache_data:  # type: ignore
+            return self._cache_data[path]  # type: ignore
         
         try:
+            # Load image using OpenCV (BGR format)
             img = cv2.imread(str(path), cv2.IMREAD_COLOR)
             if img is None:
                 raise IOError(f"Unable to read RGB image: {path}")
             
+            # Convert to RGB
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             
+            # Resize image if needed
             if img.shape[:2] != self.img_size:
                 img = cv2.resize(img, (self.img_size[1], self.img_size[0]), interpolation=cv2.INTER_LINEAR)
             
+            # Cache image if caching enabled
             if self.cache:
-                self._cache_data[path] = img #type: ignore 
+                self._cache_data[path] = img  # type: ignore
             
             return img
         except Exception as e:
             logger.error(f"Failed to load RGB image {path}: {e}")
             raise
-    
+
     def _load_depth(self, path: Path) -> np.ndarray:
-        if self.cache and path in self._cache_data: #type: ignore 
-            return self._cache_data[path] #type: ignore 
+        # Return cached depth if available
+        if self.cache and path in self._cache_data:  # type: ignore
+            return self._cache_data[path]  # type: ignore
         
         try:
-            import OpenEXR #type: ignore 
-            import Imath #type: ignore 
+            # Try loading using OpenEXR (for high precision depth)
+            import OpenEXR  # type: ignore
+            import Imath  # type: ignore
             
             exr_file = OpenEXR.InputFile(str(path))
             header = exr_file.header()
             
+            # Get image dimensions from EXR header
             dw = header['dataWindow']
             size = (dw.max.x - dw.min.x + 1, dw.max.y - dw.min.y + 1)
             
+            # Read the R channel (assuming depth stored in R)
             FLOAT = Imath.PixelType(Imath.PixelType.FLOAT)
             depth_str = exr_file.channel('R', FLOAT)
             depth = np.frombuffer(depth_str, dtype=np.float32)
             depth = depth.reshape(size[1], size[0])
             
+            # Resize if depth shape mismatches expected size
             if depth.shape != self.img_size:
                 depth = cv2.resize(depth, (self.img_size[1], self.img_size[0]), interpolation=cv2.INTER_NEAREST)
             
+            # Clip to valid depth range
             depth = np.clip(depth, self.min_depth, self.max_depth)
             
+            # Replace invalid values (zero, NaN, inf) with 0.0
             invalid_mask = (depth <= 0) | np.isnan(depth) | np.isinf(depth)
             depth[invalid_mask] = 0.0
             
+            # Cache if enabled
             if self.cache:
-                self._cache_data[path] = depth #type: ignore 
+                self._cache_data[path] = depth  # type: ignore
             
             return depth
         except ImportError:
+            # Fall back if OpenEXR not installed
             logger.warning("OpenEXR not available, trying PIL fallback")
             return self._load_depth_fallback(path)
         except Exception as e:
             logger.error(f"Failed to load depth {path}: {e}")
             raise
-    
+
     def _load_depth_fallback(self, path: Path) -> np.ndarray:
         try:
+            # Read depth image using OpenCV as fallback
             depth = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
             if depth is None:
                 raise IOError(f"Unable to read depth image: {path}")
             
+            # Ensure depth values are float32
             if depth.dtype != np.float32:
                 depth = depth.astype(np.float32)
             
+            # Resize to target size if needed
             if depth.shape != self.img_size:
                 depth = cv2.resize(depth, (self.img_size[1], self.img_size[0]), interpolation=cv2.INTER_NEAREST)
             
+            # Clip to depth range
             depth = np.clip(depth, self.min_depth, self.max_depth)
             
+            # Zero out invalid values
             invalid_mask = (depth <= 0) | np.isnan(depth) | np.isinf(depth)
             depth[invalid_mask] = 0.0
             
@@ -252,92 +306,109 @@ class ENRICHDataset(Dataset):
         except Exception as e:
             logger.error(f"Fallback depth loading failed {path}: {e}")
             raise
-    
+
     def _create_valid_depth_mask(self, depth: np.ndarray) -> np.ndarray:
+        # Return boolean mask of valid depth values
         return ((depth > self.min_depth) & 
                 (depth < self.max_depth) & 
                 (~np.isnan(depth)) & 
                 (~np.isinf(depth))).astype(bool)
-    
+
     def _apply_domain_adaptation(self, rgb: np.ndarray, depth: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        # If domain adaptation is disabled, return input as-is
         if not self.domain_adaptation:
             return rgb, depth
         
+        # Apply random Gaussian noise to depth
         noise_std = random.uniform(0.01, 0.05)
         noise = np.random.normal(0, noise_std, depth.shape).astype(np.float32)
         depth = np.clip(depth + noise, self.min_depth, self.max_depth)
         
+        # Apply random brightness and contrast changes to RGB
         brightness_factor = random.uniform(0.8, 1.2)
         contrast_factor = random.uniform(0.8, 1.2)
         
-        rgb = rgb.astype(np.float32) / 255.0
-        rgb = np.clip(rgb * brightness_factor, 0, 1)
-        rgb = np.clip((rgb - 0.5) * contrast_factor + 0.5, 0, 1)
-        rgb = (rgb * 255).astype(np.uint8)
+        rgb = rgb.astype(np.float32) / 255.0  # Normalize to [0,1]
+        rgb = np.clip(rgb * brightness_factor, 0, 1)  # Adjust brightness
+        rgb = np.clip((rgb - 0.5) * contrast_factor + 0.5, 0, 1)  # Adjust contrast
+        rgb = (rgb * 255).astype(np.uint8)  # Convert back to uint8
         
         return rgb, depth
-    
+
     def _apply_synchronized_transforms(self, rgb: np.ndarray, depth: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        # Skip augmentation if disabled
         if not self.augmentation:
             return rgb, depth
-        
+
+        # Random horizontal flip applied to both RGB and depth to keep them aligned
         if random.random() > 0.5:
             rgb = np.fliplr(rgb)
             depth = np.fliplr(depth)
-        
+
         return rgb, depth
-    
+
     def _build_rgb_transform(self):
         transforms = []
-        
+
+        # Apply data augmentation if enabled
         if self.augmentation:
             transforms.extend([
-                T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-                T.RandomHorizontalFlip(p=0.5)
+                T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),  # Color perturbations
+                T.RandomHorizontalFlip(p=0.5)  # Random horizontal flip
             ])
-        
+
+        # Convert image to tensor and normalize using ImageNet stats
         transforms.extend([
             T.ToTensor(),
             T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
-        
+
         return T.Compose(transforms)
-    
+
     def _build_depth_transform(self):
+        # Simple tensor conversion for depth (no normalization)
         return T.Compose([T.ToTensor()])
-    
+
     def compute_statistics(self) -> Dict[str, Any]:
+        # Initialize RGB stats accumulators and depth values list
         rgb_sum = np.zeros(3)
         rgb_sq_sum = np.zeros(3)
         depth_values = []
         pixel_count = 0
-        
+
         logger.info("Computing dataset statistics...")
-        
+
+        # Limit computation to a sample of the dataset (max 1000 samples)
         sample_count = min(len(self.samples), 1000)
-        
+
         for i, sample in enumerate(self.samples[:sample_count]):
             if i % 100 == 0:
                 logger.info(f"Processing sample {i}/{sample_count}")
-            
+
+            # Load RGB and depth images
             rgb = self._load_rgb(sample['rgb'])
             depth = self._load_depth(sample['depth'])
-            
+
+            # Normalize RGB to [0, 1] and compute running sums
             rgb_normalized = rgb.astype(np.float32) / 255.0
             rgb_sum += rgb_normalized.reshape(-1, 3).sum(axis=0)
             rgb_sq_sum += (rgb_normalized.reshape(-1, 3) ** 2).sum(axis=0)
             pixel_count += rgb.shape[0] * rgb.shape[1]
-            
+
+            # Extract valid depth values using mask
             valid_mask = self._create_valid_depth_mask(depth)
             if valid_mask.any():
                 depth_values.append(depth[valid_mask])
-        
+
+        # Concatenate all valid depth values
         depth_values = np.concatenate(depth_values) if depth_values else np.array([])
-        
+
+        # Compute mean and std for RGB
         rgb_mean = rgb_sum / pixel_count
         rgb_var = (rgb_sq_sum / pixel_count) - (rgb_mean ** 2)
         rgb_std = np.sqrt(rgb_var)
-        
+
+        # Assemble statistics dictionary
         stats = {
             'rgb_mean': rgb_mean.tolist(),
             'rgb_std': rgb_std.tolist(),
@@ -349,22 +420,26 @@ class ENRICHDataset(Dataset):
             'depth_mean': float(depth_values.mean()) if depth_values.size > 0 else None,
             'depth_std': float(depth_values.std()) if depth_values.size > 0 else None,
         }
-        
+
+        # Compute depth percentiles if values exist
         if depth_values.size > 0:
             for percentile in [25, 50, 75, 95]:
                 stats[f'depth_p{percentile}'] = float(np.percentile(depth_values, percentile))
-        
+
         logger.info("Statistics computation completed")
         return stats
-    
+
     def get_sample_info(self, idx: int) -> Dict[str, Any]:
+        # Check for valid index range
         if idx < 0 or idx >= len(self):
             raise IndexError(f"Index {idx} out of bounds")
-        
+
+        # Load sample and corresponding data
         sample = self.samples[idx]
         rgb = self._load_rgb(sample['rgb'])
         depth = self._load_depth(sample['depth'])
-        
+
+        # Return metadata and stats about the sample
         return {
             'rgb_path': str(sample['rgb']),
             'depth_path': str(sample['depth']),
@@ -378,37 +453,45 @@ class ENRICHDataset(Dataset):
             'dataset': sample['dataset'],
             'basename': sample['basename']
         }
-    
+
     def __len__(self):
+        # Return total number of samples
         return len(self.samples)
-    
+
     def __getitem__(self, idx: int):
+        # Validate index
         if idx < 0 or idx >= len(self):
             raise IndexError(f"Index {idx} out of bounds")
-        
+
+        # Load RGB and depth data for the sample
         sample = self.samples[idx]
-        
         rgb = self._load_rgb(sample['rgb'])
         depth = self._load_depth(sample['depth'])
-        
+
+        # Apply domain adaptation if enabled
         if self.domain_adaptation:
             rgb, depth = self._apply_domain_adaptation(rgb, depth)
-        
+
+        # Apply synchronized data augmentation
         if self.augmentation:
             rgb, depth = self._apply_synchronized_transforms(rgb, depth)
-        
+
+        # Apply RGB and depth transforms
         rgb_tensor = self.rgb_transform(rgb)
         depth_tensor = self.depth_transform(depth)
-        
-        if depth_tensor.dim() == 2: #type: ignore 
-            depth_tensor = depth_tensor.unsqueeze(0) #type: ignore 
-        
+
+        # Ensure depth has channel dimension
+        if depth_tensor.dim() == 2:  # type: ignore
+            depth_tensor = depth_tensor.unsqueeze(0)  # type: ignore
+
+        # Generate binary valid depth mask
         valid_mask = self._create_valid_depth_mask(depth)
-        
+
+        # Return sample as dictionary
         return {
             'rgb': rgb_tensor,
             'depth': depth_tensor,
-            'valid_mask': T.ToTensor()(valid_mask.astype(np.float32)), #type: ignore 
+            'valid_mask': T.ToTensor()(valid_mask.astype(np.float32)),  # type: ignore
             'dataset': sample['dataset'],
             'basename': sample['basename']
         }

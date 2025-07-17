@@ -1,5 +1,6 @@
 # FILE: tests/test_framework.py
 # ehsanasgharzde - COMPREHENSIVE TEST RUNNER SCRIPT
+# hosseinsolymanzadeh - PROPER COMMENTING
 
 import os
 import sys
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TestConfig:
-    """Configuration for test execution"""
+    #Configuration for test execution
     test_directory: str = "tests"
     output_directory: str = "test_results"
     parallel_workers: int = 4
@@ -39,7 +40,7 @@ class TestConfig:
 
 @dataclass
 class TestResult:
-    """Test result data structure"""
+    # Test result data structure
     file_path: str
     framework: str
     status: str
@@ -53,7 +54,7 @@ class TestResult:
     memory_usage: Optional[Dict] = None
 
 class TestDiscovery:
-    """Test discovery and classification"""
+    # Test discovery and classification
     
     def __init__(self, config: TestConfig):
         self.config = config
@@ -80,14 +81,14 @@ class TestDiscovery:
         return test_files
     
     def _should_include_file(self, file_path: Path) -> bool:
-        """Check if file should be included based on patterns"""
+        # Check if file should be included based on patterns
         for pattern in self.config.exclude_patterns:
             if file_path.match(pattern):
                 return False
         return True
     
     def _detect_framework(self, file_path: Path) -> str:
-        """Detect test framework based on file content"""
+        # Detect test framework based on file content
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -121,7 +122,7 @@ class TestDiscovery:
             return "pytest"  # Default fallback
 
 class TestExecutor:
-    """Test execution engine"""
+    #Test execution engine
     
     def __init__(self, config: TestConfig):
         self.config = config
@@ -129,7 +130,7 @@ class TestExecutor:
         self.start_time = time.time()
         
     def run_all_tests(self, test_files: Dict[str, List[Path]]) -> List[TestResult]:
-        """Run all discovered tests"""
+        # Run all discovered tests
         logger.info("Starting comprehensive test execution")
         
         # Prepare output directory
@@ -152,7 +153,7 @@ class TestExecutor:
         return self.results
     
     def _run_parallel_tests(self, test_files: Dict[str, List[Path]]) -> None:
-        """Run tests in parallel"""
+        # Run tests in parallel
         with ThreadPoolExecutor(max_workers=self.config.parallel_workers) as executor:
             futures = []
             
@@ -177,7 +178,7 @@ class TestExecutor:
                     logger.error(f"Test execution error: {e}")
     
     def _run_sequential_tests(self, test_files: Dict[str, List[Path]]) -> None:
-        """Run tests sequentially"""
+        # Run tests sequentially
         for framework, files in test_files.items():
             for test_file in files:
                 try:
@@ -192,7 +193,7 @@ class TestExecutor:
                     logger.error(f"Test execution error: {e}")
     
     def _run_single_test(self, test_file: Path, framework: str) -> TestResult:
-        """Run a single test file"""
+        # Run a single test file
         logger.info(f"Running {framework} test: {test_file}")
         start_time = time.time()
         
@@ -222,7 +223,7 @@ class TestExecutor:
             )
     
     def _run_pytest(self, test_file: Path) -> TestResult:
-        """Run pytest test file"""
+        # Run pytest test file
         cmd = [
             sys.executable, "-m", "pytest",
             str(test_file),
@@ -259,7 +260,7 @@ class TestExecutor:
             )
     
     def _run_unittest(self, test_file: Path) -> TestResult:
-        """Run unittest test file"""
+        # Run unittest test file
         cmd = [
             sys.executable, "-m", "unittest",
             f"{test_file.stem}",
@@ -291,7 +292,7 @@ class TestExecutor:
             )
     
     def _run_utility_test(self, test_file: Path) -> TestResult:
-        """Run utility test file"""
+        # Run utility test file
         cmd = [sys.executable, str(test_file)]
         
         try:
@@ -329,7 +330,7 @@ class TestExecutor:
             )
     
     def _parse_pytest_output(self, test_file: Path, result: subprocess.CompletedProcess) -> TestResult:
-        """Parse pytest output and XML report"""
+        # Parse pytest output and XML report
         xml_file = Path(f"{self.config.output_directory}/pytest_{test_file.stem}.xml")
         
         tests_run = 0
@@ -365,7 +366,7 @@ class TestExecutor:
         )
     
     def _parse_unittest_output(self, test_file: Path, result: subprocess.CompletedProcess) -> TestResult:
-        """Parse unittest output"""
+        # Parse unittest output
         output = result.stdout + result.stderr
         
         # Simple parsing of unittest output
@@ -389,7 +390,7 @@ class TestExecutor:
         )
     
     def _generate_reports(self) -> None:
-        """Generate comprehensive test reports"""
+        # Generate comprehensive test reports
         if self.config.html_report:
             self._generate_html_report()
         
@@ -409,7 +410,7 @@ class TestExecutor:
         logger.info(f"HTML report generated: {report_file}")
     
     def _generate_json_report(self) -> None:
-        """Generate JSON test report"""
+        # Generate JSON test report
         report_data = {
             "timestamp": datetime.now().isoformat(),
             "total_duration": time.time() - self.start_time,
@@ -436,7 +437,7 @@ class TestExecutor:
         logger.info(f"JSON report generated: {report_file}")
     
     def _generate_summary_report(self) -> None:
-        """Generate summary report to console"""
+        # Generate summary report to console
         stats = self._get_summary_stats()
         
         print("\n" + "="*60)
@@ -459,7 +460,7 @@ class TestExecutor:
                     print(f"  - {result.file_path} ({result.framework})")
     
     def _get_summary_stats(self) -> Dict[str, Any]:
-        """Calculate summary statistics"""
+        # Calculate summary statistics
         total_tests = sum(r.tests_run for r in self.results)
         total_failures = sum(r.failures for r in self.results)
         total_errors = sum(r.errors for r in self.results)
@@ -480,7 +481,7 @@ class TestExecutor:
         }
     
     def _create_html_report(self) -> str:
-        """Create HTML report content"""
+        # Create HTML report content
         stats = self._get_summary_stats()
         
         html = f"""
@@ -549,7 +550,7 @@ class TestExecutor:
         return html
     
     def _send_email_notification(self) -> None:
-        """Send email notification with test results"""
+        # Send email notification with test results
         if not self.config.email_config:
             return
         
@@ -591,7 +592,7 @@ class TestExecutor:
             logger.error(f"Failed to send email notification: {e}")
 
 def main():
-    """Main entry point"""
+    # Main entry point
     parser = argparse.ArgumentParser(description="Comprehensive Test Runner")
     parser.add_argument("--test-dir", default="tests", help="Test directory")
     parser.add_argument("--output-dir", default="test_results", help="Output directory")

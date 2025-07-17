@@ -7,8 +7,8 @@ from typing import List, Optional, Dict, Any
 import logging
 import warnings
 import traceback
-from .backbones.backbone_fixed import ViT
-from .decoders.decoder_fixed import DPT
+from .backbones.backbone import ViT
+from .decoders.decoder import DPT
 import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)
@@ -492,16 +492,7 @@ class edepth(nn.Module):
         logger.debug("Output validation passed")
 
     def count_parameters(self, trainable_only: bool = True) -> int:
-        """
-        Count the number of parameters in the model.
 
-        Args:
-            trainable_only (bool): If True, count only parameters that require gradients.
-                                If False, count all parameters.
-
-        Returns:
-            int: Total number of parameters.
-        """
         def _count_params(module):
             return sum(
                 p.numel()
@@ -524,15 +515,7 @@ class edepth(nn.Module):
         return total_params
 
     def get_model_summary(self, input_size: tuple = (1, 3, 224, 224)) -> Dict[str, Any]:
-        """
-        Generate a summary of the model architecture including parameter counts and memory usage.
 
-        Args:
-            input_size (tuple): Shape of the dummy input tensor (default: (1, 3, 224, 224)).
-
-        Returns:
-            Dict[str, Any]: Summary dictionary containing per-module details and memory estimates.
-        """
         summary = {}  # Dictionary to store summary info per module
         hooks = []    # List to store forward hooks
         device = next(self.parameters()).device  # Get the device where model parameters are located

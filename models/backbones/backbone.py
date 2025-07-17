@@ -22,19 +22,7 @@ RECOMMENDED_VIT_MODELS = {
 }
 
 class ViT(nn.Module):
-    """
-    Complete ViT backbone implementation for depth estimation with proper
-    sequence-to-spatial conversion and multi-scale feature extraction.
-    
-    Key Features:
-    - Proper ViT sequence format handling
-    - Multi-scale feature extraction via hooks
-    - Gradient checkpointing support
-    - Comprehensive validation and logging
-    - Dynamic patch grid calculation
-    - Resource cleanup management
-    """
-    
+  
     def __init__(
         self, 
         model_name: str = 'vit_base_patch16_224',
@@ -73,7 +61,6 @@ class ViT(nn.Module):
                    f"Embed dim: {self.embed_dim}")
     
     def _validate_and_set_config(self, model_name: str, img_size: Optional[int], patch_size: Optional[int]) -> None:
-        """Validate model configuration and set parameters."""
         if model_name not in RECOMMENDED_VIT_MODELS:
             available_models = list(RECOMMENDED_VIT_MODELS.keys())
             logger.error(f"Model '{model_name}' not supported. Available: {available_models}")
@@ -93,7 +80,6 @@ class ViT(nn.Module):
         logger.debug(f"Configuration validated: img_size={self.img_size}, patch_size={self.patch_size}")
     
     def _load_backbone_model(self) -> None:
-        """Load the ViT backbone model with proper error handling."""
         try:
             logger.info(f"Loading TIMM model: {self.model_name} (pretrained={self.pretrained})")
             self.backbone = timm.create_model(
@@ -117,7 +103,6 @@ class ViT(nn.Module):
             raise RuntimeError(f"Failed to load ViT backbone: {e}")
     
     def _setup_extract_layers(self, extract_layers: Optional[List[int]]) -> None:
-        """Set up feature extraction layers with validation."""
         if extract_layers is None:
             # Default: extract from last 4 layers for multi-scale features
             self.extract_layers = [
@@ -139,7 +124,6 @@ class ViT(nn.Module):
         logger.info(f"Feature extraction layers configured: {self.extract_layers}")
     
     def _setup_feature_hooks(self) -> None:
-        """Set up forward hooks for intermediate feature extraction."""
         logger.debug("Setting up feature extraction hooks")
         
         # Clean up existing hooks first
@@ -159,9 +143,7 @@ class ViT(nn.Module):
         logger.info(f"Successfully registered {len(self._hooks)} feature hooks")
     
     def _create_feature_hook(self, layer_idx: int) -> Callable:
-        """Create a forward hook function for a specific layer."""
         def hook_fn(module, input, output):
-            """Hook function to capture intermediate features."""
             try:
                 # Store the output tensor (sequence format: [B, N_patches+1, embed_dim])
                 self._features[layer_idx] = output.clone()
@@ -173,7 +155,6 @@ class ViT(nn.Module):
         return hook_fn
     
     def _validate_input(self, x: torch.Tensor) -> None:
-        """Comprehensive input validation with detailed logging."""
         logger.debug(f"Validating input tensor: {x.shape}")
         
         # Type validation
@@ -227,7 +208,6 @@ class ViT(nn.Module):
         logger.debug(f"Input validation passed: {batch_size}x{channels}x{height}x{width}")
     
     def _calculate_patch_grid(self, height: int, width: int) -> Tuple[int, int]:
-        """Calculate patch grid dimensions with validation."""
         if height % self.patch_size != 0:
             raise ValueError(f"Height {height} not divisible by patch size {self.patch_size}")
         
@@ -243,7 +223,6 @@ class ViT(nn.Module):
         return h_patches, w_patches
     
     def _sequence_to_spatial(self, features: torch.Tensor, h_patches: int, w_patches: int) -> torch.Tensor:
-        """Convert ViT sequence format to spatial format with validation."""
         logger.debug(f"Converting sequence to spatial: {features.shape} -> patches {h_patches}x{w_patches}")
         
         B, N, C = features.shape
@@ -266,7 +245,6 @@ class ViT(nn.Module):
         return spatial_features
     
     def _apply_gradient_checkpointing(self, x: torch.Tensor) -> torch.Tensor:
-        """Apply gradient checkpointing for memory efficiency."""
         if not self.training or not self.use_checkpointing:
             logger.debug("Skipping gradient checkpointing")
             return self.backbone(x)
@@ -307,7 +285,6 @@ class ViT(nn.Module):
             raise
     
     def _interpolate_features(self, features: torch.Tensor, target_size: Tuple[int, int]) -> torch.Tensor:
-        """Interpolate features to target size with logging."""
         current_h, current_w = features.shape[2], features.shape[3]
         target_h, target_w = target_size
         
@@ -326,16 +303,7 @@ class ViT(nn.Module):
         
         return interpolated
     
-    def forward_features(self, x: torch.Tensor) -> List[torch.Tensor]:
-        """
-        Main forward pass returning multi-scale spatial features.
-        
-        Args:
-            x: Input tensor [B, 3, H, W]
-            
-        Returns:
-            List of spatial feature tensors [B, C, H_patches, W_patches]
-        """
+    def forward_features(self, x: torch.Tensor) -> List[torch.Tensor]: 
         logger.debug(f"Forward pass started with input shape: {x.shape}")
         
         # Step 1: Input validation
@@ -391,11 +359,9 @@ class ViT(nn.Module):
         return processed_features
     
     def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
-        """Main forward method - wrapper around forward_features."""
         return self.forward_features(x)
     
     def get_feature_info(self) -> Dict[str, Any]:
-        """Get detailed information about extracted features."""
         h_patches, w_patches = self._calculate_patch_grid(self.img_size, self.img_size)
         
         info = {
@@ -433,7 +399,6 @@ class ViT(nn.Module):
         return info
     
     def _cleanup_hooks(self) -> None:
-        """Clean up registered hooks to prevent memory leaks."""
         logger.debug(f"Cleaning up {len(self._hooks)} hooks")
         
         for hook in self._hooks:
@@ -448,7 +413,6 @@ class ViT(nn.Module):
         logger.debug("Hook cleanup completed")
     
     def __del__(self):
-        """Destructor to ensure proper cleanup."""
         try:
             self._cleanup_hooks()
         except Exception as e:

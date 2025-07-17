@@ -9,7 +9,7 @@ import json
 import yaml
 import logging
 import traceback
-from .model_fixed import edepth
+from models.edepth import edepth
 
 logger = logging.getLogger(__name__)
 

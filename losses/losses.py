@@ -1,5 +1,6 @@
 # FILE: losses/losses_fixed.py
 # ehsanasgharzde - COMPLETE LOSS FUNCTION IMPLEMENTATIONS
+# hosseinsolymanzadeh - PROPER COMMENTING
 
 import torch
 import torch.nn as nn
@@ -25,13 +26,6 @@ DEFAULT_LOSS_WEIGHTS = {
 SUPPORTED_LOSSES = ['l1', 'l2', 'bce', 'dice', 'focal', 'ssim', 'combo', 'custom']
 
 class SiLogLoss(nn.Module):
-    """
-    Scale-Invariant Logarithmic Loss for depth estimation
-    Key characteristics:
-    - Scale invariant: handles different depth ranges
-    - Logarithmic: better for relative depth errors
-    - Variance term: reduces overfitting to mean depth
-    """
     
     def __init__(self, eps: float = 1e-7, lambda_var: float = 0.85):
         super().__init__()
@@ -116,11 +110,6 @@ class SiLogLoss(nn.Module):
 
 
 class EdgeAwareSmoothnessLoss(nn.Module):
-    """
-    Edge-Aware Smoothness Loss for depth estimation.
-    Encourages smooth depth predictions while preserving edges
-    using image gradients to weight the smoothness cost.
-    """
 
     def __init__(self, alpha: float = 1.0, beta: float = 1.0):
         super().__init__()
@@ -136,11 +125,9 @@ class EdgeAwareSmoothnessLoss(nn.Module):
         logger.debug(f"EdgeAwareSmoothnessLoss initialized with alpha={alpha}, beta={beta}")
 
     def _compute_gradient_x(self, img: torch.Tensor) -> torch.Tensor:
-        """Compute horizontal (x-direction) image gradients"""
         return img[:, :, :, :-1] - img[:, :, :, 1:]
 
     def _compute_gradient_y(self, img: torch.Tensor) -> torch.Tensor:
-        """Compute vertical (y-direction) image gradients"""
         return img[:, :, :-1, :] - img[:, :, 1:, :]
 
     def forward(self, pred: torch.Tensor, image: torch.Tensor) -> torch.Tensor:
@@ -189,10 +176,6 @@ class EdgeAwareSmoothnessLoss(nn.Module):
 
 
 class GradientConsistencyLoss(nn.Module):
-    """
-    Gradient Consistency Loss for depth estimation.
-    Penalizes inconsistencies in depth gradients between predicted and ground truth maps.
-    """
 
     def __init__(self, weight_x: float = 1.0, weight_y: float = 1.0):
         super().__init__()
@@ -208,11 +191,9 @@ class GradientConsistencyLoss(nn.Module):
         logger.debug(f"Initialized GradientConsistencyLoss with weight_x={weight_x}, weight_y={weight_y}")
 
     def _compute_gradient_x(self, img: torch.Tensor) -> torch.Tensor:
-        """Compute horizontal (x-direction) gradients using finite difference."""
         return img[..., :, :-1] - img[..., :, 1:]
 
     def _compute_gradient_y(self, img: torch.Tensor) -> torch.Tensor:
-        """Compute vertical (y-direction) gradients using finite difference."""
         return img[..., :-1, :] - img[..., 1:, :]
 
     def forward(self, pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
@@ -273,10 +254,6 @@ class GradientConsistencyLoss(nn.Module):
 
 
 class MultiScaleLoss(nn.Module):
-    """
-    Multi-Scale Loss for depth estimation.
-    Computes losses at multiple resolutions to better supervise both global structure and fine details.
-    """
 
     def __init__(self, scales: List[float] = [1.0, 0.5, 0.25], weights: List[float] = [1.0, 0.5, 0.25], mode: str = 'bilinear'):
         super().__init__()
@@ -350,11 +327,6 @@ class MultiScaleLoss(nn.Module):
 
 
 class BerHuLoss(nn.Module):
-    """
-    Reverse Huber (BerHu) Loss for depth estimation.
-    Combines L1 loss for small residuals and L2 loss for large residuals,
-    improving robustness to outliers.
-    """
 
     def __init__(self, threshold: float = 0.2):
         super().__init__()
@@ -422,10 +394,6 @@ class BerHuLoss(nn.Module):
 
 
 class RMSELoss(nn.Module):
-    """
-    Root Mean Square Error Loss for depth estimation.
-    Computes sqrt(mean((pred - target)^2)).
-    """
 
     def __init__(self, eps: float = 1e-8):
         super().__init__()
@@ -477,11 +445,6 @@ class RMSELoss(nn.Module):
 
 
 class MAELoss(nn.Module):
-    """
-    Mean Absolute Error Loss for depth estimation.
-    Computes the average of the absolute differences between predicted and true values.
-    Less sensitive to outliers than MSE.
-    """
 
     def __init__(self):
         super().__init__()
@@ -527,10 +490,6 @@ class MAELoss(nn.Module):
 
 
 class MultiLoss(nn.Module):
-    """
-    Combined Loss for comprehensive depth estimation.
-    Combines multiple loss functions with configurable weights.
-    """
 
     def __init__(self, silog_weight: float = 1.0, smoothness_weight: float = 0.1, gradient_weight: float = 0.1, berhu_weight: float = 0.0, loss_config: Optional[Dict] = None):
         super().__init__()

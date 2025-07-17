@@ -1,5 +1,6 @@
 # FILE: tests/test_backbone.py
 # ehsanasgharzde - COMPLETE BACKBONE TEST SUITE
+# hosseinsolymanzadeh - PROPER COMMENTING
 
 import torch
 import pytest
@@ -9,17 +10,17 @@ from unittest.mock import patch, MagicMock
 import time
 import gc
 
-from models.backbones.backbone_fixed import ViT, RECOMMENDED_VIT_MODELS
+from models.backbones.backbone import ViT, RECOMMENDED_VIT_MODELS
 
 # Setup logging for tests
 logger = logging.getLogger(__name__)
 
 class TestViT:
-    """Test suite for ViT backbone with improved organization and reduced duplication."""
+    # Test suite for ViT backbone with improved organization and reduced duplication.
     
     @staticmethod
     def get_test_config(model_name: str = 'vit_base_patch16_224') -> Dict[str, Any]:
-        """Get test configuration using the recommended models dictionary."""
+        # Get test configuration using the recommended models dictionary.
         if model_name not in RECOMMENDED_VIT_MODELS:
             raise ValueError(f"Model {model_name} not in recommended models")
         
@@ -29,13 +30,13 @@ class TestViT:
     
     @staticmethod
     def create_dummy_input(batch_size: int, img_size: int, channels: int = 3) -> torch.Tensor:
-        """Create standardized dummy input tensor."""
+        # Create standardized dummy input tensor.
         return torch.randn(batch_size, channels, img_size, img_size, requires_grad=True)
     
     @staticmethod
     def create_dummy_sequence_features(batch_size: int, patch_size: int, 
                                      img_size: int, embed_dim: int) -> torch.Tensor:
-        """Create dummy sequence features with CLS token."""
+        # Create dummy sequence features with CLS token.
         h_patches, w_patches = img_size // patch_size, img_size // patch_size
         num_patches = h_patches * w_patches
         return torch.randn(batch_size, num_patches + 1, embed_dim, requires_grad=True)
@@ -43,7 +44,7 @@ class TestViT:
     @staticmethod
     def validate_feature_tensor(features: torch.Tensor, expected_shape: Tuple[int, ...], 
                               layer_name: str = "feature") -> None:
-        """Standardized feature validation."""
+        # Standardized feature validation.
         assert features.shape == expected_shape, \
             f"{layer_name} shape mismatch: expected {expected_shape}, got {features.shape}"
         assert not torch.isnan(features).any(), f"NaN values found in {layer_name}"
@@ -52,7 +53,7 @@ class TestViT:
     
     @staticmethod
     def validate_gradient_flow(tensor: torch.Tensor, tensor_name: str = "tensor") -> None:
-        """Validate gradient flow through tensor."""
+        # Validate gradient flow through tensor.
         assert tensor.grad is not None, f"No gradient found for {tensor_name}"
         grad_norm = tensor.grad.norm().item()
         assert grad_norm > 0, f"Zero gradient norm for {tensor_name}"
@@ -60,7 +61,7 @@ class TestViT:
     
     def create_test_model(self, model_name: str = 'vit_base_patch16_224', 
                          **kwargs) -> ViT:
-        """Create standardized test model."""
+        # Create standardized test model.
         config = self.get_test_config(model_name)
         config.update(kwargs)
         config['pretrained'] = False  # Faster for testing
@@ -73,7 +74,7 @@ class TestViT:
 @pytest.mark.parametrize("batch_size", [1, 2])
 @pytest.mark.parametrize("model_name", ['vit_base_patch16_224', 'vit_base_patch8_224'])
 def test_sequence_to_spatial_conversion(batch_size: int, model_name: str):
-    """Test sequence-to-spatial conversion using model configuration."""
+    # Test sequence-to-spatial conversion using model configuration.
     logger.info(f"Testing sequence-to-spatial conversion: batch_size={batch_size}, model={model_name}")
     
     test_helper = TestViT()
@@ -104,7 +105,7 @@ def test_sequence_to_spatial_conversion(batch_size: int, model_name: str):
 @pytest.mark.parametrize("model_name", ['vit_base_patch16_224', 'vit_base_patch16_384'])
 @pytest.mark.parametrize("batch_size", [1, 2])
 def test_multi_scale_feature_extraction(model_name: str, batch_size: int):
-    """Test multi-scale feature extraction using model configuration."""
+    # Test multi-scale feature extraction using model configuration.
     logger.info(f"Testing multi-scale features: model={model_name}, batch_size={batch_size}")
     
     test_helper = TestViT()
@@ -135,7 +136,7 @@ def test_multi_scale_feature_extraction(model_name: str, batch_size: int):
 @pytest.mark.parametrize("use_checkpointing", [False, True])
 @pytest.mark.parametrize("model_name", ['vit_base_patch16_224'])
 def test_gradient_checkpointing(use_checkpointing: bool, model_name: str):
-    """Test gradient checkpointing functionality."""
+    # Test gradient checkpointing functionality.
     logger.info(f"Testing gradient checkpointing: enabled={use_checkpointing}")
     
     test_helper = TestViT()
@@ -166,7 +167,7 @@ def test_gradient_checkpointing(use_checkpointing: bool, model_name: str):
 
 @pytest.mark.parametrize("model_name", ['vit_base_patch16_224'])
 def test_backbone_output_shape_and_consistency(model_name: str):
-    """Test backbone output shapes and consistency."""
+    #Test backbone output shapes and consistency.
     logger.info(f"Testing backbone output shapes for {model_name}")
     
     test_helper = TestViT()
@@ -201,7 +202,7 @@ def test_backbone_output_shape_and_consistency(model_name: str):
     logger.info(f"Backbone output shape test passed for {model_name}")
 
 def test_model_configuration_validation():
-    """Test model configuration validation."""
+    #Test model configuration validation.
     logger.info("Testing model configuration validation")
     
     test_helper = TestViT()
@@ -221,7 +222,7 @@ def test_model_configuration_validation():
     logger.info("Model configuration validation test passed")
 
 def test_input_validation():
-    """Test input validation functionality."""
+    # Test input validation functionality.
     logger.info("Testing input validation")
     
     test_helper = TestViT()
@@ -246,7 +247,7 @@ def test_input_validation():
     logger.info("Input validation test passed")
 
 def test_feature_info_utility():
-    """Test the feature info utility method."""
+    #Test the feature info utility method.
     logger.info("Testing feature info utility")
     
     test_helper = TestViT()
@@ -269,7 +270,7 @@ def test_feature_info_utility():
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_device_compatibility():
-    """Test device compatibility (GPU/CPU)."""
+    #Test device compatibility (GPU/CPU).
     logger.info("Testing device compatibility")
     
     test_helper = TestViT()
@@ -289,7 +290,7 @@ def test_device_compatibility():
     logger.info("Device compatibility test passed")
 
 def benchmark_performance():
-    """Benchmark performance with proper cleanup."""
+    #Benchmark performance with proper cleanup.
     logger.info("Starting performance benchmark")
     
     test_helper = TestViT()
@@ -357,7 +358,7 @@ def benchmark_performance():
 
 # Integration test
 def test_end_to_end_workflow():
-    """Test complete end-to-end workflow."""
+    #Test complete end-to-end workflow.
     logger.info("Testing end-to-end workflow")
     
     test_helper = TestViT()
