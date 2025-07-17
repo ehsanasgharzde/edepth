@@ -1,5 +1,6 @@
 # FILE: tests/test_losses.py
 # ehsanasgharzde - COMPLETE LOSS FUNCTION TEST SUITE
+# hosseinsolymanzadeh - PROPER COMMENTING
 
 import pytest
 import torch
@@ -24,7 +25,7 @@ from losses.factory import (
     LOSS_CONFIG_SCHEMAS
 )
 
-from losses.losses_fixed import (
+from losses.losses import (
     SiLogLoss,
     EdgeAwareSmoothnessLoss,
     GradientConsistencyLoss,
@@ -49,7 +50,7 @@ ALL_LOSS_CLASSES = [
 
 @pytest.fixture(scope='function')
 def dummy_data():
-    """Create dummy tensors for testing."""
+    # Create dummy tensors for testing.
     batch_size, channels, height, width = 2, 1, 32, 32
     
     # Create valid depth data (positive values)
@@ -73,7 +74,7 @@ def dummy_data():
 
 @pytest.fixture(scope='function')
 def edge_case_data():
-    """Create edge case tensors for testing."""
+    # Create edge case tensors for testing.
     batch_size, channels, height, width = 1, 1, 16, 16
     
     return {
@@ -87,14 +88,7 @@ def edge_case_data():
     }
 
 def assert_loss_properties(loss_value, should_be_finite=True, should_be_non_negative=True):
-    """
-    Common assertions for loss values.
-    
-    Args:
-        loss_value: The loss tensor to check
-        should_be_finite: Whether loss should be finite
-        should_be_non_negative: Whether loss should be non-negative
-    """
+  
     if should_be_finite:
         assert torch.isfinite(loss_value).all(), f"Loss contains non-finite values: {loss_value}"
     
@@ -102,13 +96,8 @@ def assert_loss_properties(loss_value, should_be_finite=True, should_be_non_nega
         assert loss_value.item() >= 0, f"Loss should be non-negative: {loss_value.item()}"
 
 def assert_gradient_flow(pred_tensor, loss_value):
-    """
-    Check that gradients flow through the computation.
     
-    Args:
-        pred_tensor: Input tensor with requires_grad=True
-        loss_value: Loss value to backpropagate
-    """
+    # Check that gradients flow through the computation.
     if pred_tensor.requires_grad:
         loss_value.backward(retain_graph=True)
         assert pred_tensor.grad is not None, "Gradients should flow to prediction tensor"
@@ -116,12 +105,12 @@ def assert_gradient_flow(pred_tensor, loss_value):
 
 
 class TestLoss:
-    """Test individual loss function implementations."""
+    # Test individual loss function implementations.
     
     @pytest.mark.parametrize('loss_class', ALL_LOSS_CLASSES)
     @pytest.mark.parametrize('shape', TEST_SHAPES)
     def test_loss_forward_backward(self, loss_class, shape, dummy_data):
-        """Test forward and backward pass for all loss functions."""
+        # Test forward and backward pass for all loss functions.
         batch_size, channels, height, width = shape
         
         # Create appropriately sized tensors
@@ -153,7 +142,7 @@ class TestLoss:
     
     @pytest.mark.parametrize('loss_class', [SiLogLoss, BerHuLoss, RMSELoss, MAELoss, GradientConsistencyLoss])
     def test_loss_without_mask(self, loss_class, dummy_data):
-        """Test loss functions without explicit mask."""
+        # Test loss functions without explicit mask.
         pred = dummy_data['pred']
         target = dummy_data['target']
         
@@ -165,7 +154,7 @@ class TestLoss:
     
     @pytest.mark.parametrize('device', TEST_DEVICES)
     def test_loss_device_consistency(self, device, dummy_data):
-        """Test that losses work on different devices."""
+        # Test that losses work on different devices.
         pred = dummy_data['pred'].to(device)
         target = dummy_data['target'].to(device)
         mask = dummy_data['mask'].to(device)
@@ -177,7 +166,7 @@ class TestLoss:
         assert_loss_properties(loss_value)
     
     def test_silog_loss_parameters(self, dummy_data):
-        """Test SiLogLoss with various parameters."""
+        # Test SiLogLoss with various parameters.
         pred = dummy_data['pred']
         target = dummy_data['target']
         mask = dummy_data['mask']
@@ -195,7 +184,7 @@ class TestLoss:
             assert_loss_properties(loss_value)
     
     def test_berhu_loss_thresholds(self, dummy_data):
-        """Test BerHuLoss with different threshold values."""
+        # Test BerHuLoss with different threshold values.
         pred = dummy_data['pred']
         target = dummy_data['target']
         mask = dummy_data['mask']
@@ -208,7 +197,7 @@ class TestLoss:
             assert_loss_properties(loss_value)
     
     def test_multiscale_loss_configurations(self, dummy_data):
-        """Test MultiScaleLoss with different scale configurations."""
+        # Test MultiScaleLoss with different scale configurations.
         pred = dummy_data['pred']
         target = dummy_data['target']
         mask = dummy_data['mask']
@@ -230,11 +219,11 @@ class TestLoss:
 
 
 class TestEdgeCases:
-    """Test edge cases and error conditions."""
+    # Test edge cases and error conditions.
     
     @pytest.mark.parametrize('loss_class', [SiLogLoss, BerHuLoss, RMSELoss, MAELoss])
     def test_empty_mask_handling(self, loss_class, edge_case_data):
-        """Test behavior with empty masks."""
+        # Test behavior with empty masks.
         pred = torch.rand(1, 1, 16, 16, requires_grad=True) + 0.1
         target = torch.rand(1, 1, 16, 16) + 0.1
         empty_mask = edge_case_data['empty_mask']
@@ -248,7 +237,7 @@ class TestEdgeCases:
         assert torch.isclose(loss_value, torch.tensor(0.0))
     
     def test_nan_input_handling(self, dummy_data):
-        """Test handling of NaN inputs."""
+        # Test handling of NaN inputs.
         pred = dummy_data['pred'].clone()
         target = dummy_data['target'].clone()
         mask = dummy_data['mask']
@@ -268,7 +257,7 @@ class TestEdgeCases:
             pass
     
     def test_shape_mismatch_errors(self, dummy_data):
-        """Test that shape mismatches raise appropriate errors."""
+        # Test that shape mismatches raise appropriate errors.
         pred = dummy_data['pred']
         target = torch.rand(1, 1, 16, 16)  # Different shape
         mask = dummy_data['mask']
@@ -279,7 +268,7 @@ class TestEdgeCases:
             loss_fn(pred, target, mask)
     
     def test_zero_tensors(self, edge_case_data):
-        """Test behavior with zero tensors."""
+        # Test behavior with zero tensors.
         zero_pred = edge_case_data['zero_pred']
         zero_target = edge_case_data['zero_target']
         full_mask = edge_case_data['full_mask']
@@ -292,10 +281,10 @@ class TestEdgeCases:
 
 
 class TestLossFactory:
-    """Test loss factory functionality."""
+    # Test loss factory functionality.
     
     def test_loss_registration(self):
-        """Test loss registration and retrieval."""
+        # Test loss registration and retrieval.
         initial_count = len(get_registered_losses())
         
         # Register a new loss
@@ -311,7 +300,7 @@ class TestLossFactory:
     
     @pytest.mark.parametrize('loss_name', ['SiLogLoss', 'BerHuLoss', 'RMSELoss', 'MAELoss'])
     def test_create_loss_by_name(self, loss_name, dummy_data):
-        """Test creating losses by name."""
+        # Test creating losses by name.
         loss_fn = create_loss(loss_name)
         
         pred = dummy_data['pred']
@@ -327,7 +316,7 @@ class TestLossFactory:
             assert_loss_properties(loss_value)
     
     def test_create_loss_with_config(self, dummy_data):
-        """Test creating losses with configuration."""
+        # Test creating losses with configuration.
         config = {'lambda_var': 0.9, 'eps': 1e-6}
         loss_fn = create_loss('SiLogLoss', config)
         
@@ -339,12 +328,12 @@ class TestLossFactory:
         assert_loss_properties(loss_value)
     
     def test_create_loss_invalid_name(self):
-        """Test error handling for invalid loss names."""
+        # Test error handling for invalid loss names.
         with pytest.raises(ValueError, match="not found in registry"):
             create_loss('NonExistentLoss')
     
     def test_validate_loss_config(self):
-        """Test loss configuration validation."""
+        # Test loss configuration validation.
         # Test valid config
         config = {'lambda_var': 0.85, 'eps': 1e-7}
         validated = validate_loss_config('SiLogLoss', config)
@@ -363,7 +352,7 @@ class TestLossFactory:
         assert validated['custom_param'] == 123
     
     def test_create_combined_loss(self, dummy_data):
-        """Test creating combined losses."""
+        # Test creating combined losses.
         loss_configs = [
             {'name': 'SiLogLoss', 'weight': 0.7, 'config': {'lambda_var': 0.85}},
             {'name': 'RMSELoss', 'weight': 0.3, 'config': {}}
@@ -382,7 +371,7 @@ class TestLossFactory:
         assert_loss_properties(loss_value)
     
     def test_create_combined_loss_validation(self):
-        """Test combined loss validation."""
+        # Test combined loss validation.
         # Test empty config
         with pytest.raises(ValueError, match="At least one loss"):
             create_combined_loss([])
@@ -393,10 +382,10 @@ class TestLossFactory:
 
 
 class TestUtilityFunctions:
-    """Test utility functions."""
+    # Test utility functions.
     
     def test_compute_loss_statistics(self):
-        """Test loss statistics computation."""
+        # Test loss statistics computation.
         loss_values = [1.0, 2.0, 3.0, 4.0, 5.0, 10.0]  # Include a spike
         
         stats = compute_loss_statistics(loss_values)
@@ -415,7 +404,7 @@ class TestUtilityFunctions:
         assert stats['spike_count'] >= 1  # Should detect the spike at 10.0
     
     def test_get_loss_weights_schedule(self):
-        """Test loss weight scheduling."""
+        # Test loss weight scheduling.
         base_weights = {'loss1': 1.0, 'loss2': 0.5}
         
         # Test constant schedule
@@ -435,7 +424,7 @@ class TestUtilityFunctions:
         assert weights['loss1'] < base_weights['loss1']  # Should decay
     
     def test_export_loss_configuration(self, dummy_data):
-        """Test loss configuration export."""
+        # Test loss configuration export.
         loss_fn = create_loss('SiLogLoss', {'lambda_var': 0.9})
         
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
@@ -456,7 +445,7 @@ class TestUtilityFunctions:
             Path(export_path).unlink(missing_ok=True)
     
     def test_integrate_with_trainer(self, dummy_data):
-        """Test trainer integration."""
+        # Test trainer integration.
         # Create mock trainer
         trainer = Mock()
         trainer.add_hook = Mock()
@@ -485,11 +474,11 @@ class TestUtilityFunctions:
 
 
 class TestPerformanceAndMemory:
-    """Test performance and memory usage."""
+    # Test performance and memory usage.
     
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
     def test_cuda_memory_usage(self, dummy_data):
-        """Test CUDA memory usage."""
+        # Test CUDA memory usage.
         device = 'cuda'
         
         pred = dummy_data['pred'].to(device)
@@ -514,7 +503,7 @@ class TestPerformanceAndMemory:
     
     @pytest.mark.benchmark
     def test_loss_computation_speed(self, benchmark, dummy_data):
-        """Benchmark loss computation speed."""
+        # Benchmark loss computation speed.
         pred = dummy_data['pred']
         target = dummy_data['target']
         mask = dummy_data['mask']
@@ -529,7 +518,7 @@ class TestPerformanceAndMemory:
     
     @pytest.mark.parametrize('batch_size', [1, 4, 8])
     def test_batch_size_scaling(self, batch_size):
-        """Test that losses scale properly with batch size."""
+        # Test that losses scale properly with batch size.
         pred = torch.rand(batch_size, 1, 32, 32, requires_grad=True) + 0.1
         target = torch.rand(batch_size, 1, 32, 32) + 0.1
         mask = torch.ones(batch_size, 1, 32, 32, dtype=torch.bool)
@@ -541,10 +530,10 @@ class TestPerformanceAndMemory:
         assert loss_value.shape == torch.Size([])  # Should be scalar
 
 class TestIntegration:
-    """Integration tests for complete workflows."""
+    # Integration tests for complete workflows.
     
     def test_complete_training_workflow(self, dummy_data):
-        """Test complete training workflow simulation."""
+        # Test complete training workflow simulation.
         # Setup
         loss_configs = [
             {'name': 'SiLogLoss', 'weight': 0.7, 'config': {'lambda_var': 0.85}},
@@ -582,7 +571,7 @@ class TestIntegration:
         assert all(v >= 0 for v in loss_history)
     
     def test_factory_to_training_pipeline(self, dummy_data):
-        """Test factory integration with training pipeline."""
+        # Test factory integration with training pipeline.
         # Create loss through factory
         loss_fn = create_loss('SiLogLoss', {'lambda_var': 0.9})
         

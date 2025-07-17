@@ -1,7 +1,6 @@
-"""
-FILE: losses/factory.py
-ehsanasgharzde - Complete Loss Factory Implementation
-"""
+# FILE: losses/factory.py
+# ehsanasgharzde - Complete Loss Factory Implementation
+# hosseinsolymanzadeh - PROPER COMMENTING
 
 import logging
 from typing import Type, Dict, Optional, Any, List, Callable, Union
@@ -12,7 +11,7 @@ import torch
 import torch.nn as nn
 
 # Import loss classes
-from losses.losses_fixed import (
+from losses.losses import (
     SiLogLoss,
     EdgeAwareSmoothnessLoss,
     GradientConsistencyLoss,
@@ -31,41 +30,49 @@ LOSS_REGISTRY: Dict[str, Type[Callable]] = {}
 
 # Loss configuration validation schemas
 LOSS_CONFIG_SCHEMAS = {
+    # Configuration schema for SiLogLoss with optional parameters and their defaults
     'SiLogLoss': {
         'required': [],
         'optional': {'lambda_var': float, 'epsilon': float},
         'defaults': {'lambda_var': 0.85, 'epsilon': 1e-8}
     },
+    # Configuration schema for BerHuLoss
     'BerHuLoss': {
         'required': [],
         'optional': {'threshold': float, 'epsilon': float},
         'defaults': {'threshold': 0.2, 'epsilon': 1e-8}
     },
+    # Configuration schema for EdgeAwareSmoothnessLoss
     'EdgeAwareSmoothnessLoss': {
         'required': [],
         'optional': {'alpha': float, 'beta': float},
         'defaults': {'alpha': 1.0, 'beta': 1.0}
     },
+    # Configuration schema for GradientConsistencyLoss
     'GradientConsistencyLoss': {
         'required': [],
         'optional': {'weight_x': float, 'weight_y': float},
         'defaults': {'weight_x': 1.0, 'weight_y': 1.0}
     },
+    # Configuration schema for MultiScaleLoss with scales and weights lists
     'MultiScaleLoss': {
         'required': [],
         'optional': {'scales': list, 'weights': list},
         'defaults': {'scales': [1.0, 0.5, 0.25], 'weights': [1.0, 0.5, 0.25]}
     },
+    # Configuration schema for RMSELoss
     'RMSELoss': {
         'required': [],
         'optional': {'epsilon': float},
         'defaults': {'epsilon': 1e-8}
     },
+    # Configuration schema for MAELoss (no optional parameters)
     'MAELoss': {
         'required': [],
         'optional': {},
         'defaults': {}
     },
+    # Configuration schema for MultiLoss requiring 'losses' parameter and optional weights
     'MultiLoss': {
         'required': ['losses'],
         'optional': {'weights': list},
@@ -74,13 +81,7 @@ LOSS_CONFIG_SCHEMAS = {
 }
 
 def register_loss(name: str, loss_class: Type[Callable]) -> None:
-    """
-    Register a loss function in the global registry.
-    
-    Args:
-        name: String identifier for the loss function
-        loss_class: Loss class to register
-    """
+    # Register a loss function class with a name in the global registry
     if name in LOSS_REGISTRY:
         logger.warning(f"Loss function '{name}' already registered. Overwriting.")
     
@@ -88,41 +89,23 @@ def register_loss(name: str, loss_class: Type[Callable]) -> None:
     logger.info(f"Registered loss function: {name}")
 
 def get_registered_losses() -> List[str]:
-    """
-    Get list of all registered loss function names.
-    
-    Returns:
-        List of registered loss function names
-    """
+    # Return a list of all registered loss function names
     return list(LOSS_REGISTRY.keys())
 
 def create_loss(loss_name: str, loss_config: Optional[Dict] = None, **kwargs) -> Callable:
-    """
-    Create a loss function instance from the registry.
-    
-    Args:
-        loss_name: Name of the loss function to create
-        loss_config: Configuration dictionary for the loss
-        **kwargs: Additional keyword arguments (override config values)
-        
-    Returns:
-        Configured loss function instance
-        
-    Raises:
-        ValueError: If loss_name is not registered
-    """
+    # Factory function to create an instance of a registered loss function
     if loss_name not in LOSS_REGISTRY:
         available_losses = get_registered_losses()
         raise ValueError(f"Loss '{loss_name}' not found in registry. Available losses: {available_losses}")
     
-    # Merge configuration with kwargs (kwargs take precedence)
+    # Merge the provided config dict with additional kwargs (kwargs override config)
     config = loss_config or {}
     final_config = {**config, **kwargs}
     
-    # Validate configuration
+    # Validate the final configuration according to the schema
     final_config = validate_loss_config(loss_name, final_config)
     
-    # Create loss instance
+    # Instantiate the loss class with validated config
     try:
         loss_class = LOSS_REGISTRY[loss_name]
         loss_instance = loss_class(**final_config) #type: ignore
@@ -135,16 +118,7 @@ def create_loss(loss_name: str, loss_config: Optional[Dict] = None, **kwargs) ->
         raise
 
 def validate_loss_config(loss_name: str, config: Dict) -> Dict:
-    """
-    Validate and normalize loss configuration.
-    
-    Args:
-        loss_name: Name of the loss function
-        config: Configuration dictionary to validate
-        
-    Returns:
-        Validated and normalized configuration dictionary
-    """
+    # Validate the provided configuration dict against the schema for the loss_name
     if loss_name not in LOSS_CONFIG_SCHEMAS:
         logger.warning(f"No validation schema for loss '{loss_name}'. Using config as-is.")
         return config
@@ -152,17 +126,17 @@ def validate_loss_config(loss_name: str, config: Dict) -> Dict:
     schema = LOSS_CONFIG_SCHEMAS[loss_name]
     validated_config = {}
     
-    # Check required parameters
+    # Ensure all required parameters are present in the config
     for param in schema['required']:
         if param not in config:
             raise ValueError(f"Required parameter '{param}' missing for loss '{loss_name}'")
         validated_config[param] = config[param]
     
-    # Handle optional parameters with defaults
+    # Validate and convert optional parameters, applying defaults if not provided
     for param, param_type in schema['optional'].items():
         if param in config:
             value = config[param]
-            # Type validation
+            # Check and enforce type, except for lists which are not strictly type-checked here
             if not isinstance(value, param_type) and param_type != list:
                 try:
                     value = param_type(value)
@@ -170,9 +144,10 @@ def validate_loss_config(loss_name: str, config: Dict) -> Dict:
                     raise ValueError(f"Parameter '{param}' must be of type {param_type.__name__}")
             validated_config[param] = value
         elif param in schema['defaults']:
+            # Apply default value if param missing
             validated_config[param] = schema['defaults'][param]
     
-    # Add any other parameters not in schema
+    # Include any extra parameters that are not specified in the schema as-is
     for param, value in config.items():
         if param not in validated_config:
             validated_config[param] = value
@@ -181,17 +156,7 @@ def validate_loss_config(loss_name: str, config: Dict) -> Dict:
     return validated_config
 
 def create_combined_loss(loss_configs: List[Dict]) -> MultiLoss:
-    """
-    Create a MultiLoss instance using a list of loss configuration dictionaries.
 
-    Each dictionary must include:
-        - 'name': one of ['silog', 'smoothness', 'gradient', 'berhu']
-        - 'weight': a non-negative float
-        - 'config': (optional) additional config passed to sub-loss if needed
-
-    Returns:
-        MultiLoss instance with weights set accordingly.
-    """
     if not loss_configs:
         raise ValueError("At least one loss configuration is required.")
 
@@ -227,15 +192,7 @@ def create_combined_loss(loss_configs: List[Dict]) -> MultiLoss:
     return combined_loss
 
 def compute_loss_statistics(loss_values: List[float]) -> Dict[str, float]:
-    """
-    Compute statistical metrics for loss values.
-    
-    Args:
-        loss_values: List of loss values
-        
-    Returns:
-        Dictionary containing loss statistics
-    """
+
     if not loss_values:
         return {}
     
@@ -266,18 +223,7 @@ def compute_loss_statistics(loss_values: List[float]) -> Dict[str, float]:
 
 def get_loss_weights_schedule(epoch: int, total_epochs: int, base_weights: Dict[str, float], 
                             schedule_type: str = 'constant') -> Dict[str, float]:
-    """
-    Calculate dynamic loss weights based on training schedule.
-    
-    Args:
-        epoch: Current epoch number
-        total_epochs: Total number of training epochs
-        base_weights: Base weights for each loss component
-        schedule_type: Type of scheduling ('constant', 'linear', 'exponential', 'cosine')
-        
-    Returns:
-        Dictionary of adjusted weights for current epoch
-    """
+
     if schedule_type == 'constant':
         return base_weights.copy()
     
@@ -304,13 +250,7 @@ def get_loss_weights_schedule(epoch: int, total_epochs: int, base_weights: Dict[
 
 def visualize_loss_components(loss_history: Dict[str, List[float]], 
                             save_path: Optional[str] = None) -> None:
-    """
-    Visualize loss components over training epochs.
-    
-    Args:
-        loss_history: Dictionary mapping loss names to lists of values
-        save_path: Optional path to save the plot
-    """
+   
     if not loss_history:
         logger.warning("No loss history to visualize")
         return
@@ -335,13 +275,7 @@ def visualize_loss_components(loss_history: Dict[str, List[float]],
     plt.show()
 
 def export_loss_configuration(loss_instance: Callable, export_path: str) -> None:
-    """
-    Export loss configuration to JSON file.
-    
-    Args:
-        loss_instance: Loss instance to export
-        export_path: Path to save the configuration file
-    """
+
     config = {
         'class_name': loss_instance.__class__.__name__,
         'parameters': {},
@@ -371,13 +305,7 @@ def export_loss_configuration(loss_instance: Callable, export_path: str) -> None
     logger.info(f"Loss configuration exported to {export_path}")
 
 def integrate_with_trainer(trainer: Any, loss_config: Dict) -> None:
-    """
-    Integrate loss configuration with training pipeline.
-    
-    Args:
-        trainer: Training pipeline object
-        loss_config: Loss configuration dictionary
-    """
+
     # Create loss function
     if 'combined' in loss_config:
         loss_fn = create_combined_loss(loss_config['combined'])

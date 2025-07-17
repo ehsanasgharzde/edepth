@@ -1,18 +1,19 @@
 # FILE: tests/test_metrics.py
 # ehsanasgharzde - COMPLETE METRICS TEST SUITE
+# hosseinsolymanzadeh - PROPER COMMENTING
 
 import torch
 import numpy as np
 import pytest
 import sys
-from metrics.metrics_fixed import Metrics, rmse, mae, delta1, delta2, delta3, silog, compute_all_metrics
+from metrics.metrics import Metrics, rmse, mae, delta1, delta2, delta3, silog, compute_all_metrics
 
 
 class TestMetrics:
-    """Test class for DepthMetrics functionality."""
+    # Test class for DepthMetrics functionality.
     
     def setup_method(self):
-        """Setup test fixtures before each test method."""
+        # Setup test fixtures before each test method.
         self.metrics = Metrics()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
@@ -33,7 +34,7 @@ class TestMetrics:
         self.target_batch = torch.rand(4, 32, 32, device=self.device) * 10 + 0.1
     
     def test_initialization(self):
-        """Test DepthMetrics initialization with different parameters."""
+        # Test DepthMetrics initialization with different parameters.
         # Test default initialization
         default_metrics = Metrics()
         assert default_metrics.min_depth == 0.001
@@ -47,7 +48,7 @@ class TestMetrics:
         assert custom_metrics.eps == 1e-7
     
     def test_input_validation(self):
-        """Test input validation for various error conditions."""
+        # Test input validation for various error conditions.
         # Test non-tensor inputs
         with pytest.raises(TypeError):
             self.metrics._validate_inputs([1, 2, 3], self.target_perfect) #type: ignore
@@ -73,7 +74,7 @@ class TestMetrics:
             self.metrics._validate_inputs(self.pred_perfect, self.target_perfect, invalid_mask)
     
     def test_perfect_predictions(self):
-        """Test metrics with perfect predictions (should yield optimal values)."""
+        # Test metrics with perfect predictions (should yield optimal values).
         # Perfect predictions should yield specific metric values
         rmse_val = self.metrics.rmse(self.pred_perfect, self.target_perfect)
         mae_val = self.metrics.mae(self.pred_perfect, self.target_perfect)
@@ -93,7 +94,7 @@ class TestMetrics:
         assert abs(delta3_val - 1.0) < 1e-6, f"Delta3 should be 1.0 for perfect predictions, got {delta3_val}" #type: ignore
     
     def test_known_error_patterns(self):
-        """Test metrics with known error patterns to validate correctness."""
+        # Test metrics with known error patterns to validate correctness.
         # Test with constant offset (should give known MAE)
         mae_val = self.metrics.mae(self.pred_offset, self.target_base)
         expected_mae = 0.1  # All predictions are off by 0.1
@@ -110,7 +111,7 @@ class TestMetrics:
         assert abs(delta1_val - 1.0) < 1e-6, f"Delta1 should be 1.0 for small offset, got {delta1_val}" #type: ignore
     
     def test_edge_cases(self):
-        """Test handling of edge cases and boundary conditions."""
+        # Test handling of edge cases and boundary conditions.
         # Test with very small values near epsilon
         small_pred = torch.tensor([1e-8, 1e-7, 1e-6], device=self.device)
         small_target = torch.tensor([1e-8, 1e-7, 1e-6], device=self.device)
@@ -134,7 +135,7 @@ class TestMetrics:
         assert abs(mae_val - 1.0) < 1e-6, f"MAE should be 1.0 for single value test, got {mae_val}" #type: ignore
     
     def test_masking_functionality(self):
-        """Test proper mask handling and application."""
+        # Test proper mask handling and application.
         # Create test data with some invalid values
         pred_with_invalid = torch.tensor([1.0, 2.0, 0.0, 4.0, -1.0], device=self.device)
         target_with_invalid = torch.tensor([1.0, 2.0, 0.0, 4.0, -1.0], device=self.device)
@@ -155,7 +156,7 @@ class TestMetrics:
         assert not np.isnan(rmse_val), "RMSE should handle automatic masking"
     
     def test_return_count_functionality(self):
-        """Test return_count parameter functionality."""
+        # Test return_count parameter functionality.
         # Test with return_count=True
         rmse_val, count = self.metrics.rmse(self.pred_perfect, self.target_perfect, return_count=True) #type: ignore
         assert count == len(self.pred_perfect), f"Count should be {len(self.pred_perfect)}, got {count}" #type: ignore
@@ -167,7 +168,7 @@ class TestMetrics:
         assert count == expected_count, f"Count should be {expected_count}, got {count}" #type: ignore
     
     def test_confidence_intervals(self):
-        """Test confidence interval computation."""
+        # Test confidence interval computation.
         # Test with sufficient data points
         large_pred = torch.randn(1000, device=self.device) * 2 + 5
         large_target = torch.randn(1000, device=self.device) * 2 + 5
@@ -186,7 +187,7 @@ class TestMetrics:
         assert 'ci_upper' in ci_info, "Should contain ci_upper"
     
     def test_batch_processing(self):
-        """Test batch metric computation functionality."""
+        # Test batch metric computation functionality.
         # Test with default metrics
         batch_results = self.metrics.compute_batch_metrics(self.pred_batch, self.target_batch) #type: ignore
         
@@ -213,7 +214,7 @@ class TestMetrics:
             assert metric in batch_results, f"Metric {metric} should be in results"
     
     def test_metric_sanity_validation(self):
-        """Test metric sanity checking functionality."""
+        # Test metric sanity checking functionality.
         # Test with valid metrics
         valid_metrics = {
             'rmse': 1.5,
@@ -280,7 +281,7 @@ class TestMetrics:
             assert metric in metrics, f"Metric {metric} should be in report"
     
     def test_standalone_functions(self):
-        """Test standalone function interfaces for backward compatibility."""
+        # Test standalone function interfaces for backward compatibility.
         # Test standalone functions
         rmse_val = rmse(self.pred_perfect, self.target_perfect)
         mae_val = mae(self.pred_perfect, self.target_perfect)
@@ -305,7 +306,7 @@ class TestMetrics:
             assert key in all_metrics, f"Key {key} should be in all_metrics"
     
     def test_numerical_stability(self):
-        """Test numerical stability with extreme values."""
+        # Test numerical stability with extreme values.
         # Test with very small values
         tiny_pred = torch.full((100,), 1e-10, device=self.device)
         tiny_target = torch.full((100,), 1e-10, device=self.device)
@@ -330,7 +331,7 @@ class TestMetrics:
         assert not np.isnan(mae_val), "MAE should not be NaN for huge values"
     
     def test_memory_efficiency(self):
-        """Test memory efficiency with large tensors."""
+        # Test memory efficiency with large tensors.
         # Create large tensors to test memory handling
         if torch.cuda.is_available():
             # Only test on GPU if available, as CPU memory is more limited
@@ -350,7 +351,7 @@ class TestMetrics:
                     raise
     
     def test_device_consistency(self):
-        """Test handling of different device configurations."""
+        # Test handling of different device configurations.
         # Test CPU tensors
         cpu_pred = torch.rand(100) * 10 + 0.1
         cpu_target = torch.rand(100) * 10 + 0.1
@@ -370,15 +371,15 @@ class TestMetrics:
 
 
 class TestIntegrationScenarios:
-    """Integration tests for realistic usage scenarios."""
+    # Integration tests for realistic usage scenarios.
     
     def setup_method(self):
-        """Setup for integration tests."""
+        # Setup for integration tests.
         self.metrics = Metrics()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     def test_nyu_dataset_simulation(self):
-        """Test with NYU dataset-like parameters."""
+        # Test with NYU dataset-like parameters.
         # NYU dataset typically has depth range 0.1-10.0 meters
         nyu_metrics = Metrics(min_depth=0.1, max_depth=10.0)
         
@@ -394,7 +395,7 @@ class TestIntegrationScenarios:
         assert 'metrics' in report
     
     def test_kitti_dataset_simulation(self):
-        """Test with KITTI dataset-like parameters."""
+        # Test with KITTI dataset-like parameters.
         # KITTI dataset typically has depth range 0.001-80.0 meters
         kitti_metrics = Metrics(min_depth=0.001, max_depth=80.0)
         
@@ -414,7 +415,7 @@ class TestIntegrationScenarios:
         assert 'metrics' in report
     
     def test_training_loop_integration(self):
-        """Test integration with training loop simulation."""
+        # Test integration with training loop simulation.
         # Simulate training batch processing
         batch_size = 8
         height, width = 256, 256
@@ -469,7 +470,7 @@ class TestIntegrationScenarios:
 
 
 def run_comprehensive_tests():
-    """Run comprehensive test suite with detailed output."""
+    # Run comprehensive test suite with detailed output.
     print("Running comprehensive depth metrics test suite...")
     
     # Initialize test classes
