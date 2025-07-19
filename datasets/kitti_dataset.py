@@ -198,3 +198,4 @@ class KITTIDataset(BaseDataset):
             'sequence': sample['sequence'],
             'basename': sample['basename']
         }
+        
