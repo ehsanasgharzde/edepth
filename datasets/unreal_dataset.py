@@ -208,9 +208,7 @@ class UnrealStereo4KDataset(BaseDataset):
                            baseline: float = 0.54) -> np.ndarray:
         # Convert disparity to depth using camera parameters
         with np.errstate(divide='ignore', invalid='ignore'):
-            depth = (focal_length * baseline) / (disparity + 1e-8)  # Avoid division by zero
-            # Clip depth values to valid range
-            depth = np.clip(depth, self.min_depth, self.max_depth)
+            depth = (focal_length * baseline) / (disparity + 1e-8)
             # Set depth to zero where disparity is zero or negative (invalid)
             depth[disparity <= 0] = 0
         return depth
