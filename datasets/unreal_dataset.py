@@ -1,7 +1,7 @@
 # FILE: datasets/unreal_dataset.py
 # ehsanasgharzde - UNREALSTEREO4K DATASET
 # hosseinsolymanzadeh - PROPER COMMENTING
-
+# ehsanasgharzde, hosseinsolymanzadeh- FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTINOS AND BASECLASS LEVEL METHODS
 import numpy as np
 from scipy.ndimage import zoom
 import torchvision.transforms as T
