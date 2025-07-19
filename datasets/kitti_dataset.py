@@ -10,23 +10,16 @@ from torch.utils.data import Dataset
 import torchvision.transforms as T
 import json
 import logging
+from utils.dataset import BaseDataset
 
 logger = logging.getLogger(__name__)
 
-class KITTIDataset(Dataset):
+class KITTIDataset(BaseDataset):
     def __init__(self, data_root, split='train', img_size=(352, 1216),
                  min_depth=1e-3, max_depth=80.0, depth_scale=256.0,
                  augmentation=True, cache=False, use_dense_depth=False):
         super().__init__()
         
-        self.data_root = data_root  # Path to the dataset root directory
-        self.split = split  # Dataset split: 'train', 'val', or 'test'
-        self.img_size = img_size  # Desired image size (height, width)
-        self.min_depth = min_depth  # Minimum depth value threshold
-        self.max_depth = max_depth  # Maximum depth value threshold
-        self.depth_scale = depth_scale  # Scale factor for depth values
-        self.augmentation = augmentation  # Whether to apply data augmentation
-        self.cache = cache  # Whether to cache the loaded data in memory
         self.use_dense_depth = use_dense_depth  # Whether to use dense depth maps
         
         self._validate_initialization_parameters()  # Check if the provided parameters are valid

@@ -12,37 +12,21 @@ import json
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
+from utils.dataset import BaseDataset
+
 
 logger = logging.getLogger(__name__)
 
-class UnrealStereo4KDataset(Dataset):
+class UnrealStereo4KDataset(BaseDataset):
     def __init__(self, data_root: str, split: str = 'train', img_size: Tuple[int, int] = (480, 640),
                  min_depth: float = 0.1, max_depth: float = 100.0, depth_scale: float = 1.0,
                  use_stereo: bool = False, augmentation: bool = True, cache: bool = False,
                  validate_data: bool = True, scene_ids: Optional[List[str]] = None):
         # Initialize dataset with configuration parameters
-        super().__init__()
+        super().__init__(data_root, split, img_size, min_depth, max_depth, depth_scale, augmentation, cache, validate_data, domain_adaptation, dataset_type)
         
-        # Root directory path of dataset
-        self.data_root = Path(data_root)
-        # Dataset split: 'train', 'val', or 'test'
-        self.split = split
-        # Target image size (height, width)
-        self.img_size = img_size
-        # Minimum depth threshold to consider
-        self.min_depth = min_depth
-        # Maximum depth threshold to consider
-        self.max_depth = max_depth
-        # Scale factor to apply on depth values
-        self.depth_scale = depth_scale
         # Flag to indicate whether stereo image pairs are used
         self.use_stereo = use_stereo
-        # Enable data augmentation only for training split
-        self.augmentation = augmentation and split == 'train'
-        # Whether to cache data in memory for faster access
-        self.cache = cache
-        # Flag to enable validation of dataset structure and sample integrity
-        self.validate_data = validate_data
         # Optional list of scene IDs to restrict dataset loading
         self.scene_ids = scene_ids
         
@@ -51,7 +35,7 @@ class UnrealStereo4KDataset(Dataset):
         
         # Optionally check dataset directory structure and required files
         if validate_data:
-            self._validate_dataset_structure()
+            self.validate_dataset_structure()
             
         # Load dataset samples metadata into memory
         self.samples = self._load_samples()
@@ -88,7 +72,7 @@ class UnrealStereo4KDataset(Dataset):
         if self.depth_scale <= 0:
             raise ValueError("depth_scale must be positive")
     
-    def _validate_dataset_structure(self):
+    def validate_dataset_structure(self):
         # List scene directories (folders named as digits) under data root
         scene_dirs = [d for d in self.data_root.iterdir() if d.is_dir() and d.name.isdigit()]
         # Raise error if no scene directories found
