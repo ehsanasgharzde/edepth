@@ -1,7 +1,7 @@
 # FILE: datasets/nyu_dataset.py
 # ehsanasgharzde - NYU DEPTH V2 DATASET
 # hosseinsolymanzadeh - PROPER COMMENTING
-# ehsanasgharzde, hosseinsolymanzadeh- FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTINOS AND BASECLASS LEVEL METHODS
+# ehsanasgharzde, hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTINOS AND BASECLASS LEVEL METHODS
 
 import logging
 from pathlib import Path

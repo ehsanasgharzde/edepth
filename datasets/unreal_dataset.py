@@ -1,7 +1,7 @@
 # FILE: datasets/unreal_dataset.py
 # ehsanasgharzde - UNREALSTEREO4K DATASET
 # hosseinsolymanzadeh - PROPER COMMENTING
-# ehsanasgharzde, hosseinsolymanzadeh- FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTINOS AND BASECLASS LEVEL METHODS
+# ehsanasgharzde, hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTINOS AND BASECLASS LEVEL METHODS
 
 import numpy as np
 from scipy.ndimage import zoom
@@ -204,11 +204,12 @@ class UnrealStereo4KDataset(BaseDataset):
             logger.error(f"Failed to load disparity {path}: {e}")
             raise
     
-    def disparity_to_depth(self, disparity: np.ndarray, focal_length: float = 1000.0, 
-                           baseline: float = 0.54) -> np.ndarray:
+    def disparity_to_depth(self, disparity: np.ndarray, 
+                           focal_length: float = 1000.0, baseline: float = 0.54) -> np.ndarray:
         # Convert disparity to depth using camera parameters
         with np.errstate(divide='ignore', invalid='ignore'):
             depth = (focal_length * baseline) / (disparity + 1e-8)
+
             # Set depth to zero where disparity is zero or negative (invalid)
             depth[disparity <= 0] = 0
         return depth

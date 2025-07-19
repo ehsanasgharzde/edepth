@@ -1,14 +1,14 @@
 # FILE: losses/factory.py
 # ehsanasgharzde - Complete Loss Factory Implementation
 # hosseinsolymanzadeh - PROPER COMMENTING
+# ehsanasgharzde - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTINOS AND BASECLASS LEVEL METHODS
 
 import logging
-from typing import Type, Dict, Optional, Any, List, Callable, Union
+from typing import Type, Dict, Optional, Any, List, Callable
 import numpy as np
 import matplotlib.pyplot as plt
 import json
 import torch
-import torch.nn as nn
 
 # Import loss classes
 from losses.losses import (
@@ -22,6 +22,8 @@ from losses.losses import (
     MultiLoss,
 )
 
+from ..utils.loss import compute_loss_statistics
+
 # Setup logger for factory operations
 logger = logging.getLogger(__name__)
 
@@ -33,14 +35,14 @@ LOSS_CONFIG_SCHEMAS = {
     # Configuration schema for SiLogLoss with optional parameters and their defaults
     'SiLogLoss': {
         'required': [],
-        'optional': {'lambda_var': float, 'epsilon': float},
-        'defaults': {'lambda_var': 0.85, 'epsilon': 1e-8}
+        'optional': {'lambda_var': float, 'eps': float},
+        'defaults': {'lambda_var': 0.85, 'eps': 1e-7}
     },
     # Configuration schema for BerHuLoss
     'BerHuLoss': {
         'required': [],
-        'optional': {'threshold': float, 'epsilon': float},
-        'defaults': {'threshold': 0.2, 'epsilon': 1e-8}
+        'optional': {'threshold': float},
+        'defaults': {'threshold': 0.2}
     },
     # Configuration schema for EdgeAwareSmoothnessLoss
     'EdgeAwareSmoothnessLoss': {
@@ -54,17 +56,17 @@ LOSS_CONFIG_SCHEMAS = {
         'optional': {'weight_x': float, 'weight_y': float},
         'defaults': {'weight_x': 1.0, 'weight_y': 1.0}
     },
-    # Configuration schema for MultiScaleLoss with scales and weights lists
+    # Configuration schema for MultiScaleLoss with base_loss requirement
     'MultiScaleLoss': {
-        'required': [],
+        'required': ['base_loss'],
         'optional': {'scales': list, 'weights': list},
         'defaults': {'scales': [1.0, 0.5, 0.25], 'weights': [1.0, 0.5, 0.25]}
     },
     # Configuration schema for RMSELoss
     'RMSELoss': {
         'required': [],
-        'optional': {'epsilon': float},
-        'defaults': {'epsilon': 1e-8}
+        'optional': {'eps': float},
+        'defaults': {'eps': 1e-8}
     },
     # Configuration schema for MAELoss (no optional parameters)
     'MAELoss': {
@@ -72,28 +74,28 @@ LOSS_CONFIG_SCHEMAS = {
         'optional': {},
         'defaults': {}
     },
-    # Configuration schema for MultiLoss requiring 'losses' parameter and optional weights
+    # Configuration schema for MultiLoss requiring 'loss_configs' parameter
     'MultiLoss': {
-        'required': ['losses'],
-        'optional': {'weights': list},
+        'required': ['loss_configs'],
+        'optional': {},
         'defaults': {}
     }
 }
 
+
 def register_loss(name: str, loss_class: Type[Callable]) -> None:
-    # Register a loss function class with a name in the global registry
     if name in LOSS_REGISTRY:
         logger.warning(f"Loss function '{name}' already registered. Overwriting.")
     
     LOSS_REGISTRY[name] = loss_class
     logger.info(f"Registered loss function: {name}")
 
+
 def get_registered_losses() -> List[str]:
-    # Return a list of all registered loss function names
     return list(LOSS_REGISTRY.keys())
 
+
 def create_loss(loss_name: str, loss_config: Optional[Dict] = None, **kwargs) -> Callable:
-    # Factory function to create an instance of a registered loss function
     if loss_name not in LOSS_REGISTRY:
         available_losses = get_registered_losses()
         raise ValueError(f"Loss '{loss_name}' not found in registry. Available losses: {available_losses}")
@@ -108,7 +110,7 @@ def create_loss(loss_name: str, loss_config: Optional[Dict] = None, **kwargs) ->
     # Instantiate the loss class with validated config
     try:
         loss_class = LOSS_REGISTRY[loss_name]
-        loss_instance = loss_class(**final_config) #type: ignore
+        loss_instance = loss_class(**final_config) # type: ignore
         
         logger.info(f"Created loss '{loss_name}' with config: {final_config}")
         return loss_instance
@@ -117,8 +119,8 @@ def create_loss(loss_name: str, loss_config: Optional[Dict] = None, **kwargs) ->
         logger.error(f"Failed to create loss '{loss_name}': {str(e)}")
         raise
 
+
 def validate_loss_config(loss_name: str, config: Dict) -> Dict:
-    # Validate the provided configuration dict against the schema for the loss_name
     if loss_name not in LOSS_CONFIG_SCHEMAS:
         logger.warning(f"No validation schema for loss '{loss_name}'. Using config as-is.")
         return config
@@ -155,75 +157,43 @@ def validate_loss_config(loss_name: str, config: Dict) -> Dict:
     logger.debug(f"Validated config for '{loss_name}': {validated_config}")
     return validated_config
 
-def create_combined_loss(loss_configs: List[Dict]) -> MultiLoss:
 
+def create_combined_loss(loss_configs: List[Dict]) -> MultiLoss:
     if not loss_configs:
         raise ValueError("At least one loss configuration is required.")
-
-    # Initialize weights with default zeros
-    weights = {
-        'silog': 0.0,
-        'smoothness': 0.0,
-        'gradient': 0.0,
-        'berhu': 0.0,
-    }
-
-    # Parse loss_configs and update weights
+    
+    # Validate each loss config and convert to MultiLoss format
+    multiloss_configs = []
+    
     for i, cfg in enumerate(loss_configs):
-        if 'name' not in cfg:
-            raise ValueError(f"Loss config at index {i} missing 'name' key.")
-        name = cfg['name'].lower()
-        if name not in weights:
-            raise ValueError(f"Unsupported loss name: '{name}'. Supported: {list(weights.keys())}")
+        if 'name' not in cfg and 'type' not in cfg:
+            raise ValueError(f"Loss config at index {i} missing 'name' or 'type' key.")
+        
+        # Convert 'name' to 'type' for consistency
+        loss_type = cfg.get('type', cfg.get('name', '')).lower()
         weight = cfg.get('weight', 1.0)
+        params = cfg.get('params', cfg.get('config', {}))
+        
         if weight < 0:
-            raise ValueError(f"Weight for loss '{name}' must be non-negative.")
-        weights[name] = weight  # Overwrite or set
-
-    # Create and return MultiLoss instance with parsed weights
-    combined_loss = MultiLoss(
-        silog_weight=weights['silog'],
-        smoothness_weight=weights['smoothness'],
-        gradient_weight=weights['gradient'],
-        berhu_weight=weights['berhu']
-    )
-
-    logger.info(f"Created MultiLoss with weights: {weights}")
+            raise ValueError(f"Weight for loss '{loss_type}' must be non-negative.")
+        
+        multiloss_config = {
+            'type': loss_type,
+            'weight': weight,
+            'params': params
+        }
+        multiloss_configs.append(multiloss_config)
+    
+    # Create and return MultiLoss instance
+    combined_loss = MultiLoss(loss_configs=multiloss_configs)
+    
+    logger.info(f"Created MultiLoss with {len(multiloss_configs)} component losses")
     return combined_loss
 
-def compute_loss_statistics(loss_values: List[float]) -> Dict[str, float]:
-
-    if not loss_values:
-        return {}
-    
-    loss_array = np.array(loss_values)
-    
-    stats = {
-        'mean': float(np.mean(loss_array)),
-        'std': float(np.std(loss_array)),
-        'min': float(np.min(loss_array)),
-        'max': float(np.max(loss_array)),
-        'median': float(np.median(loss_array)),
-        'count': len(loss_values)
-    }
-    
-    # Moving average (last 10 values)
-    if len(loss_values) >= 10:
-        stats['moving_avg_10'] = float(np.mean(loss_array[-10:]))
-    
-    # Spike detection (values > 2 std from mean)
-    if len(loss_values) > 1:
-        mean_val = stats['mean']
-        std_val = stats['std']
-        spikes = np.abs(loss_array - mean_val) > 2 * std_val
-        stats['spike_count'] = int(np.sum(spikes))
-        stats['spike_ratio'] = float(stats['spike_count'] / len(loss_values))
-    
-    return stats
 
 def get_loss_weights_schedule(epoch: int, total_epochs: int, base_weights: Dict[str, float], 
                             schedule_type: str = 'constant') -> Dict[str, float]:
-
+    """Generate weight schedule for different loss components during training"""
     if schedule_type == 'constant':
         return base_weights.copy()
     
@@ -248,9 +218,10 @@ def get_loss_weights_schedule(epoch: int, total_epochs: int, base_weights: Dict[
     logger.debug(f"Epoch {epoch}: adjusted weights = {adjusted_weights}")
     return adjusted_weights
 
+
 def visualize_loss_components(loss_history: Dict[str, List[float]], 
                             save_path: Optional[str] = None) -> None:
-   
+    """Visualize loss component history over training"""
     if not loss_history:
         logger.warning("No loss history to visualize")
         return
@@ -274,8 +245,9 @@ def visualize_loss_components(loss_history: Dict[str, List[float]],
     
     plt.show()
 
-def export_loss_configuration(loss_instance: Callable, export_path: str) -> None:
 
+def export_loss_configuration(loss_instance: Callable, export_path: str) -> None:
+    """Export loss configuration to JSON file"""
     config = {
         'class_name': loss_instance.__class__.__name__,
         'parameters': {},
@@ -304,8 +276,9 @@ def export_loss_configuration(loss_instance: Callable, export_path: str) -> None
     
     logger.info(f"Loss configuration exported to {export_path}")
 
-def integrate_with_trainer(trainer: Any, loss_config: Dict) -> None:
 
+def integrate_with_trainer(trainer: Any, loss_config: Dict) -> None:
+    """Integrate loss function with trainer instance"""
     # Create loss function
     if 'combined' in loss_config:
         loss_fn = create_combined_loss(loss_config['combined'])
@@ -331,6 +304,7 @@ def integrate_with_trainer(trainer: Any, loss_config: Dict) -> None:
         export_loss_configuration(loss_fn, export_path)
     
     logger.info("Loss integration with trainer completed")
+
 
 # Register all implemented loss functions
 register_loss('SiLogLoss', SiLogLoss)
