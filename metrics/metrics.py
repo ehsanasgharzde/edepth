@@ -1,6 +1,6 @@
 # FILE: metrics/metrics.py
 # ehsanasgharzde - COMPLETE METRICS IMPLEMENTATION
-# hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTINOS AND BASECLASS LEVEL METHODS
+# hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import torch
 import numpy as np
@@ -151,7 +151,7 @@ def silog(pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Tensor]
     return torch.sqrt(mean_sq - 0.85 * (mean_val ** 2)).item()
 
  
-def compute_all_metrics(self, pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Tensor] = None, 
+def compute_all_metrics(pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Tensor] = None, 
                        include_confidence: bool = False) -> Dict[str, Union[float, Dict]]:
     # Initialize dictionary to store metric results
     metrics = {}
@@ -159,19 +159,19 @@ def compute_all_metrics(self, pred: torch.Tensor, target: torch.Tensor, mask: Op
     try:
         # Compute RMSE and MAE with optional confidence intervals
         if include_confidence:
-            metrics['rmse'] = self.rmse(pred, target, mask, with_confidence=True)
-            metrics['mae'] = self.mae(pred, target, mask, with_confidence=True)
+            metrics['rmse'] = rmse(pred, target, mask, with_confidence=True)
+            metrics['mae'] = mae(pred, target, mask, with_confidence=True)
         else:
-            metrics['rmse'] = self.rmse(pred, target, mask)
-            metrics['mae'] = self.mae(pred, target, mask)
+            metrics['rmse'] = rmse(pred, target, mask)
+            metrics['mae'] = mae(pred, target, mask)
         
         # Compute delta accuracy metrics at thresholds 1.25, 1.25^2, 1.25^3
-        metrics['delta1'] = self.delta1(pred, target, mask)
-        metrics['delta2'] = self.delta2(pred, target, mask)
-        metrics['delta3'] = self.delta3(pred, target, mask)
+        metrics['delta1'] = delta1(pred, target, mask)
+        metrics['delta2'] = delta2(pred, target, mask)
+        metrics['delta3'] = delta3(pred, target, mask)
         
         # Compute scale-invariant log error metric
-        metrics['silog'] = self.silog(pred, target, mask)
+        metrics['silog'] = silog(pred, target, mask)
     
     except Exception as e:
         # Log any errors encountered during metric computation
@@ -181,7 +181,7 @@ def compute_all_metrics(self, pred: torch.Tensor, target: torch.Tensor, mask: Op
     # Return dictionary containing all computed metrics
     return metrics
 
-def compute_batch_metrics(self, pred_batch: torch.Tensor, target_batch: torch.Tensor, 
+def compute_batch_metrics(pred_batch: torch.Tensor, target_batch: torch.Tensor, 
                          mask_batch: Optional[torch.Tensor] = None, 
                          metrics_list: Optional[List[str]] = None) -> Dict[str, Dict[str, Union[float, List]]]:
     # Use default list of metrics if none provided
@@ -202,9 +202,9 @@ def compute_batch_metrics(self, pred_batch: torch.Tensor, target_batch: torch.Te
         try:
             # Compute each requested metric if the method exists
             for metric in metrics_list:
-                if hasattr(self, metric):
+                if hasattr(metric):
                     # Call the metric method dynamically and store the result
-                    value = getattr(self, metric)(pred, target, mask)
+                    value = getattr(metric)(pred, target, mask)
                     results[metric].append(value)
                 else:
                     # Log a warning for unknown metrics and append NaN

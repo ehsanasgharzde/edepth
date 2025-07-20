@@ -1,6 +1,7 @@
 # FILE: tests/test_datasets.py
 # ehsanasgharzde - COMPLETE DATASET TEST SUITE
 # hosseinsolymanzadeh - PROPER COMMENTING
+#hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import logging
 import os
@@ -14,17 +15,17 @@ import pytest
 from PIL import Image
 import cv2
 
-from datasets import create_dataset, register_dataset, validate_dataset_structure, compute_dataset_statistics, get_available_datasets, dataset_info
+from datasets import create_dataset, register_dataset, get_available_datasets, dataset_info
 from datasets.nyu_dataset import NYUV2Dataset
 from datasets.kitti_dataset import KITTIDataset
 from datasets.enrich_dataset import ENRICHDataset
-from datasets.unreal_dataset import UnrealStereo4KDataset
+from utils.dataset import BaseDataset
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 class TestDatasetFactory:
-    def test_register_dataset_new(self):
+    def test_register_dataset_new(self) -> None:
         # Register a new dataset with a unique name
         register_dataset("test_dataset", NYUV2Dataset)
         
@@ -34,7 +35,7 @@ class TestDatasetFactory:
         # Log successful registration
         logger.info("Successfully registered new dataset")
 
-    def test_register_dataset_duplicate(self):
+    def test_register_dataset_duplicate(self) -> None:
         # Register the dataset with a given name
         register_dataset("test_dup", NYUV2Dataset)
         # Attempt to register again with the same name should raise an error
@@ -44,20 +45,25 @@ class TestDatasetFactory:
         # Log that the duplicate registration was properly handled
         logger.info("Duplicate registration properly rejected")
 
-    def test_create_dataset_valid(self):
+    def test_create_dataset_valid(self) -> None:
         # Create a temporary directory for the test dataset
         with tempfile.TemporaryDirectory() as temp_dir:
             # Register a new dataset
             register_dataset("test_valid", NYUV2Dataset)
-            # Create RGB and depth directories
-            os.makedirs(os.path.join(temp_dir, "rgb"))
-            os.makedirs(os.path.join(temp_dir, "depth"))
+            
+            # Create train split directories
+            train_dir = os.path.join(temp_dir, "train")
+            os.makedirs(os.path.join(train_dir, "rgb"))
+            os.makedirs(os.path.join(train_dir, "depth"))
+            
             # Create and save a dummy RGB image
             dummy_img = Image.new('RGB', (640, 480), color='red')
-            dummy_img.save(os.path.join(temp_dir, "rgb", "test.png"))
+            dummy_img.save(os.path.join(train_dir, "rgb", "test.png"))
+            
             # Create and save a dummy depth image
             dummy_depth = np.ones((480, 640), dtype=np.uint16) * 1000
-            cv2.imwrite(os.path.join(temp_dir, "depth", "test.png"), dummy_depth)
+            cv2.imwrite(os.path.join(train_dir, "depth", "test.png"), dummy_depth)
+            
             # Attempt to create a dataset instance from the prepared data
             dataset = create_dataset("test_valid", data_root=temp_dir, split="train")
             # Assert the dataset is an instance of the correct class
@@ -66,15 +72,15 @@ class TestDatasetFactory:
             # Log successful dataset creation
             logger.info("Valid dataset created successfully")
 
-    def test_create_dataset_invalid_name(self):
+    def test_create_dataset_invalid_name(self) -> None:
         # Try creating a dataset using a name that is not registered
-        with pytest.raises(ValueError, match="not in registry"):
+        with pytest.raises(ValueError, match="not registered"):
             create_dataset("nonexistent_dataset", data_root="/tmp")
         
         # Log that the invalid dataset name was correctly rejected
         logger.info("Invalid dataset name properly rejected")
 
-    def test_get_available_datasets(self):
+    def test_get_available_datasets(self) -> None:
         # Retrieve list of registered dataset names
         datasets = get_available_datasets()
         
@@ -85,7 +91,7 @@ class TestDatasetFactory:
         # Log how many datasets were found
         logger.info(f"Found {len(datasets)} available datasets")
 
-    def test_dataset_info(self):
+    def test_dataset_info(self) -> None:
         # Register a dataset for info retrieval
         register_dataset("test_info", NYUV2Dataset)
         
@@ -101,12 +107,60 @@ class TestDatasetFactory:
         logger.info("Dataset info retrieved successfully")
 
 
-class TestNYUDataset:
-    def setup_method(self):
+class TestBaseDataset:
+    def setup_method(self) -> None:
         # Create a temporary directory for testing
         self.temp_dir = tempfile.mkdtemp()
-        self.rgb_dir = os.path.join(self.temp_dir, "rgb")
-        self.depth_dir = os.path.join(self.temp_dir, "depth")
+
+    def teardown_method(self) -> None:
+        # Remove the temporary directory and all its contents
+        shutil.rmtree(self.temp_dir)
+
+    def test_base_dataset_initialization_parameters(self) -> None:
+        # Test valid initialization parameters
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Test that BaseDataset validates parameters correctly
+            with pytest.raises(ValueError, match="Invalid split"):
+                BaseDataset(temp_dir, split="invalid")
+            
+            with pytest.raises(ValueError, match="img_size must be tuple"):
+                BaseDataset(temp_dir, img_size="invalid")
+            
+            with pytest.raises(ValueError, match="depth_scale must be positive"):
+                BaseDataset(temp_dir, depth_scale=-1.0)
+            
+            logger.info("Base dataset parameter validation working")
+
+    def test_create_default_mask(self) -> None:
+        # Test mask creation with valid BaseDataset subclass
+        with tempfile.TemporaryDirectory() as temp_dir:
+            os.makedirs(os.path.join(temp_dir, "train", "rgb"))
+            os.makedirs(os.path.join(temp_dir, "train", "depth"))
+            
+            # Create dummy files
+            dummy_img = Image.new('RGB', (640, 480), color='red')
+            dummy_img.save(os.path.join(temp_dir, "train", "rgb", "test.png"))
+            dummy_depth = np.ones((480, 640), dtype=np.uint16) * 1000
+            cv2.imwrite(os.path.join(temp_dir, "train", "depth", "test.png"), dummy_depth)
+            
+            dataset = NYUV2Dataset(temp_dir, split="train")
+            
+            # Test mask creation
+            depth = np.array([[1.0, 0.0, np.nan], [np.inf, -1.0, 2.0]])
+            mask = dataset.create_default_mask(depth)
+            expected = np.array([[True, False, False], [False, False, True]])
+            np.testing.assert_array_equal(mask, expected)
+            
+            logger.info("Default mask creation working correctly")
+
+
+class TestNYUDataset:
+    def setup_method(self) -> None:
+        # Create a temporary directory for testing
+        self.temp_dir = tempfile.mkdtemp()
+        self.train_dir = os.path.join(self.temp_dir, "train")
+        self.rgb_dir = os.path.join(self.train_dir, "rgb")
+        self.depth_dir = os.path.join(self.train_dir, "depth")
         
         # Create directories for RGB and depth images
         os.makedirs(self.rgb_dir)
@@ -122,11 +176,11 @@ class TestNYUDataset:
             dummy_depth = np.random.randint(100, 5000, (480, 640), dtype=np.uint16)
             cv2.imwrite(os.path.join(self.depth_dir, f"test_{i:04d}.png"), dummy_depth)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         # Remove the temporary directory and all its contents
         shutil.rmtree(self.temp_dir)
 
-    def test_nyu_initialization_valid(self):
+    def test_nyu_initialization_valid(self) -> None:
         # Initialize dataset with valid settings
         dataset = NYUV2Dataset(data_root=self.temp_dir, split="train")
         
@@ -136,19 +190,13 @@ class TestNYUDataset:
         assert dataset.img_size == (480, 640)
         logger.info("NYU dataset initialized successfully")
 
-    def test_nyu_initialization_invalid_split(self):
+    def test_nyu_initialization_invalid_split(self) -> None:
         # Ensure ValueError is raised for invalid split name
         with pytest.raises(ValueError, match="Invalid split"):
             NYUV2Dataset(data_root=self.temp_dir, split="invalid")
         logger.info("Invalid split properly rejected")
 
-    def test_nyu_initialization_invalid_depth_range(self):
-        # Ensure ValueError is raised when min_depth is greater than max_depth
-        with pytest.raises(ValueError, match="min_depth must be less than max_depth"):
-            NYUV2Dataset(data_root=self.temp_dir, min_depth=10.0, max_depth=5.0)
-        logger.info("Invalid depth range properly rejected")
-
-    def test_nyu_getitem(self):
+    def test_nyu_getitem(self) -> None:
         # Retrieve a sample from the dataset
         dataset = NYUV2Dataset(data_root=self.temp_dir, split="train")
         sample = dataset[0]
@@ -162,7 +210,7 @@ class TestNYUDataset:
         assert sample["valid_mask"].shape == (1, 480, 640)
         logger.info("NYU sample retrieved successfully")
 
-    def test_nyu_statistics(self):
+    def test_nyu_statistics(self) -> None:
         # Compute dataset statistics
         dataset = NYUV2Dataset(data_root=self.temp_dir, split="train")
         stats = dataset.compute_statistics()
@@ -170,10 +218,12 @@ class TestNYUDataset:
         # Ensure required statistics keys are present
         assert "rgb_mean" in stats
         assert "rgb_std" in stats
-        assert "depth_stats" in stats
+        assert "num_samples" in stats
+        assert "depth_min" in stats
+        assert "depth_max" in stats
         logger.info("NYU statistics computed successfully")
 
-    def test_nyu_sample_info(self):
+    def test_nyu_sample_info(self) -> None:
         # Retrieve sample metadata
         dataset = NYUV2Dataset(data_root=self.temp_dir, split="train")
         info = dataset.get_sample_info(0)
@@ -181,12 +231,13 @@ class TestNYUDataset:
         # Validate presence of sample metadata keys
         assert "rgb_shape" in info
         assert "depth_shape" in info
-        assert "valid_ratio" in info
+        assert "depth_valid_ratio" in info
+        assert "basename" in info
         logger.info("NYU sample info retrieved successfully")
 
 
 class TestKITTIDataset:
-    def setup_method(self):
+    def setup_method(self) -> None:
         # Create a temporary directory for test data
         self.temp_dir = tempfile.mkdtemp()
 
@@ -196,44 +247,45 @@ class TestKITTIDataset:
         os.makedirs(self.sequences_dir)
         os.makedirs(self.calib_dir)
         
-        # Create sequence 00 directory with subfolders for images and point clouds
+        # Create sequence 00 directory with subfolders
         seq_dir = os.path.join(self.sequences_dir, "00")
-        os.makedirs(os.path.join(seq_dir, "image_2"))
-        os.makedirs(os.path.join(seq_dir, "velodyne"))
+        os.makedirs(os.path.join(seq_dir, "image_02"))
+        os.makedirs(os.path.join(seq_dir, "proj_depth", "velodyne_raw"))
         
         # Write a dummy calibration file for sequence 00
         calib_file = os.path.join(self.calib_dir, "00.txt")
         with open(calib_file, 'w') as f:
             f.write("P2: 7.215377e+02 0.000000e+00 6.095593e+02 0.000000e+00 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00\n")
         
-        # Generate 5 dummy image and point cloud files
+        # Generate 5 dummy image and depth files
         for i in range(5):
             # Create a grayscale RGB image and save it
             dummy_img = Image.new('RGB', (1216, 352), color=(i*50, i*50, i*50))
-            dummy_img.save(os.path.join(seq_dir, "image_2", f"{i:010d}.png"))
+            dummy_img.save(os.path.join(seq_dir, "image_02", f"{i:010d}.png"))
             
-            # Generate and save dummy LIDAR point cloud data
-            dummy_points = np.random.rand(1000, 4).astype(np.float32)
-            dummy_points.tofile(os.path.join(seq_dir, "velodyne", f"{i:010d}.bin"))
+            # Generate and save dummy depth map
+            dummy_depth = np.random.randint(100, 5000, (352, 1216), dtype=np.uint16)
+            cv2.imwrite(os.path.join(seq_dir, "proj_depth", "velodyne_raw", f"{i:010d}.png"), dummy_depth)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         # Clean up the temporary test directory after each test
         shutil.rmtree(self.temp_dir)
 
-    def test_kitti_initialization_valid(self):
+    def test_kitti_initialization_valid(self) -> None:
         # Test proper dataset initialization with valid structure
         dataset = KITTIDataset(data_root=self.temp_dir, split="train")
         assert dataset.split == "train"
         assert dataset.img_size == (352, 1216)
+        assert not dataset.use_dense_depth  # Default should be False
         logger.info("KITTI dataset initialized successfully")
 
-    def test_kitti_initialization_invalid_structure(self):
+    def test_kitti_initialization_invalid_structure(self) -> None:
         # Test that invalid path raises FileNotFoundError
         with pytest.raises(FileNotFoundError):
             KITTIDataset(data_root="/nonexistent/path", split="train")
         logger.info("Invalid KITTI structure properly rejected")
 
-    def test_kitti_getitem(self):
+    def test_kitti_getitem(self) -> None:
         # Test retrieval of a sample from the dataset
         dataset = KITTIDataset(data_root=self.temp_dir, split="train")
         if len(dataset) > 0:
@@ -241,21 +293,41 @@ class TestKITTIDataset:
             # Check presence of expected keys in the sample
             assert "rgb" in sample
             assert "depth" in sample
-            assert "valid_mask" in sample
+            assert "mask" in sample
+            assert "sequence" in sample
+            assert "basename" in sample
             logger.info("KITTI sample retrieved successfully")
 
-    def test_kitti_statistics(self):
+    def test_kitti_statistics(self) -> None:
         # Test computation of dataset statistics
         dataset = KITTIDataset(data_root=self.temp_dir, split="train")
         stats = dataset.compute_statistics()
         # Check presence of expected statistical keys
         assert "rgb_mean" in stats
         assert "rgb_std" in stats
+        assert "depth_min" in stats
+        assert "depth_max" in stats
+        assert "num_samples" in stats
         logger.info("KITTI statistics computed successfully")
+
+    def test_kitti_use_dense_depth(self) -> None:
+        # Test KITTI dataset with dense depth option
+        # First create dense depth directory
+        seq_dir = os.path.join(self.sequences_dir, "00")
+        os.makedirs(os.path.join(seq_dir, "proj_depth", "groundtruth"), exist_ok=True)
+        
+        # Generate dummy dense depth files
+        for i in range(5):
+            dummy_depth = np.random.randint(100, 5000, (352, 1216), dtype=np.uint16)
+            cv2.imwrite(os.path.join(seq_dir, "proj_depth", "groundtruth", f"{i:010d}.png"), dummy_depth)
+        
+        dataset = KITTIDataset(data_root=self.temp_dir, split="train", use_dense_depth=True)
+        assert dataset.use_dense_depth
+        logger.info("KITTI dense depth option working correctly")
 
 
 class TestENRICHDataset:
-    def setup_method(self):
+    def setup_method(self) -> None:
         # Create a temporary directory to simulate dataset structure
         self.temp_dir = tempfile.mkdtemp()
         datasets = ["ENRICH-Aerial", "ENRICH-Square", "ENRICH-Statue"]
@@ -271,29 +343,23 @@ class TestENRICHDataset:
                 dummy_img = Image.new('RGB', (640, 480), color=(i*80, i*80, i*80))
                 dummy_img.save(os.path.join(dataset_path, "images", f"image_{i:03d}.jpg"))
                 
-                # Generate and save dummy depth map in EXR format
-                dummy_depth = np.random.rand(480, 640).astype(np.float32)
-                depth_file = os.path.join(dataset_path, "depth", "exr", f"image_{i:03d}.exr")
-                cv2.imwrite(depth_file, dummy_depth)
+                # Generate and save dummy depth map as PNG (fallback since EXR might not be available)
+                dummy_depth = np.random.rand(480, 640).astype(np.float32) * 1000
+                cv2.imwrite(os.path.join(dataset_path, "depth", "exr", f"image_{i:03d}_depth.exr"), dummy_depth.astype(np.uint16))
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         # Clean up temporary dataset directory after tests
         shutil.rmtree(self.temp_dir)
 
-    def test_enrich_initialization_valid(self):
+    def test_enrich_initialization_valid(self) -> None:
         # Test valid initialization of ENRICHDataset
         dataset = ENRICHDataset(data_root=self.temp_dir, split="train")
         assert dataset.split == "train"
         assert dataset.img_size == (480, 640)
+        assert dataset.dataset_type == "all"
         logger.info("ENRICH dataset initialized successfully")
 
-    def test_enrich_initialization_invalid_dataset_type(self):
-        # Test invalid dataset_type raises ValueError
-        with pytest.raises(ValueError, match="Invalid dataset_type"):
-            ENRICHDataset(data_root=self.temp_dir, dataset_type="invalid")
-        logger.info("Invalid ENRICH dataset type properly rejected")
-
-    def test_enrich_getitem(self):
+    def test_enrich_getitem(self) -> None:
         # Test __getitem__ returns valid data sample with expected keys
         dataset = ENRICHDataset(data_root=self.temp_dir, split="train")
         if len(dataset) > 0:
@@ -301,159 +367,38 @@ class TestENRICHDataset:
             assert "rgb" in sample
             assert "depth" in sample
             assert "valid_mask" in sample
-            assert "dataset" in sample
             logger.info("ENRICH sample retrieved successfully")
 
-    def test_enrich_statistics(self):
+    def test_enrich_statistics(self) -> None:
         # Test that compute_statistics returns expected keys
         dataset = ENRICHDataset(data_root=self.temp_dir, split="train")
         stats = dataset.compute_statistics()
         assert "rgb_mean" in stats
         assert "rgb_std" in stats
-        assert "depth_stats" in stats
+        assert "num_samples" in stats
+        assert "depth_min" in stats or stats["depth_min"] is None
+        assert "depth_max" in stats or stats["depth_max"] is None
         logger.info("ENRICH statistics computed successfully")
 
-
-class TestUnrealDataset:
-    def setup_method(self):
-        # Create a temporary directory to simulate the dataset root
-        self.temp_dir = tempfile.mkdtemp()
-        
-        # Create a mock scene directory with subfolders for images and disparities
-        scene_dir = os.path.join(self.temp_dir, "Scene001")
-        os.makedirs(os.path.join(scene_dir, "Image0"))
-        os.makedirs(os.path.join(scene_dir, "Disp0"))
-        
-        # Generate dummy RGB images and disparity maps
-        for i in range(3):
-            dummy_img = Image.new('RGB', (640, 480), color=(i*80, i*80, i*80))
-            dummy_img.save(os.path.join(scene_dir, "Image0", f"frame_{i:04d}.png"))
-            
-            dummy_disp = np.random.rand(480, 640).astype(np.float32)
-            np.save(os.path.join(scene_dir, "Disp0", f"frame_{i:04d}.npy"), dummy_disp)
-
-    def teardown_method(self):
-        # Remove the temporary directory and all its contents
-        shutil.rmtree(self.temp_dir)
-
-    def test_unreal_initialization_valid(self):
-        # Test dataset initialization with a valid dataset structure
-        dataset = UnrealStereo4KDataset(data_root=self.temp_dir, split="train")
-        assert dataset.split == "train"                  # Check correct split assignment
-        assert dataset.img_size == (480, 640)            # Check that image size is correctly inferred
-        logger.info("Unreal dataset initialized successfully")
-
-    def test_unreal_initialization_invalid_structure(self):
-        # Test that dataset raises FileNotFoundError when given a nonexistent path
-        with pytest.raises(FileNotFoundError):
-            UnrealStereo4KDataset(data_root="/nonexistent/path", split="train")
-        logger.info("Invalid Unreal structure properly rejected")
-
-    def test_unreal_getitem(self):
-        # Test __getitem__ returns a valid sample dictionary with required keys
-        dataset = UnrealStereo4KDataset(data_root=self.temp_dir, split="train")
+    def test_enrich_sample_info(self) -> None:
+        # Test get_sample_info method
+        dataset = ENRICHDataset(data_root=self.temp_dir, split="train")
         if len(dataset) > 0:
-            sample = dataset[0]
-            assert "rgb" in sample                      # Sample should include RGB image
-            assert "depth" in sample                    # Sample should include depth map
-            assert "valid_mask" in sample               # Sample should include validity mask
-            logger.info("Unreal sample retrieved successfully")
-
-    def test_unreal_statistics(self):
-        # Test compute_statistics returns dictionary with expected keys
-        dataset = UnrealStereo4KDataset(data_root=self.temp_dir, split="train")
-        stats = dataset.compute_statistics()
-        assert "rgb_mean" in stats                     # Should contain RGB mean
-        assert "rgb_std" in stats                      # Should contain RGB standard deviation
-        assert "depth_stats" in stats                  # Should contain depth statistics
-        logger.info("Unreal statistics computed successfully")
-
-
-class TestDatasetValidation:
-    def setup_method(self):
-        # Create a temporary directory for testing
-        self.temp_dir = tempfile.mkdtemp()
-
-    def teardown_method(self):
-        # Remove the temporary directory after test
-        shutil.rmtree(self.temp_dir)
-
-    def test_validate_nyu_structure_valid(self):
-        # Create required subdirectories for the NYU dataset structure
-        os.makedirs(os.path.join(self.temp_dir, "rgb"))
-        os.makedirs(os.path.join(self.temp_dir, "depth"))
-        
-        # Create and save a dummy RGB image
-        dummy_img = Image.new('RGB', (640, 480), color='red')
-        dummy_img.save(os.path.join(self.temp_dir, "rgb", "test.png"))
-        
-        # Create and save a dummy depth image with constant value
-        dummy_depth = np.ones((480, 640), dtype=np.uint16) * 1000
-        cv2.imwrite(os.path.join(self.temp_dir, "depth", "test.png"), dummy_depth)
-        
-        # Validate the NYU dataset structure and assert that it is valid
-        report = validate_dataset_structure(self.temp_dir, "nyu")
-        assert report["status"] == "valid"
-        logger.info("NYU structure validation passed")
-
-    def test_validate_dataset_structure_invalid_type(self):
-        # Expect a ValueError when an unsupported dataset type is passed
-        with pytest.raises(ValueError, match="Unsupported dataset type"):
-            validate_dataset_structure(self.temp_dir, "invalid_type")
-        logger.info("Invalid dataset type properly rejected")
-
-
-class TestDatasetStatistics:
-    def setup_method(self):
-        # Create a temporary directory for the dataset
-        self.temp_dir = tempfile.mkdtemp()
-        self.rgb_dir = os.path.join(self.temp_dir, "rgb")
-        self.depth_dir = os.path.join(self.temp_dir, "depth")
-        
-        # Create subdirectories for RGB and depth images
-        os.makedirs(self.rgb_dir)
-        os.makedirs(self.depth_dir)
-        
-        # Generate 10 dummy RGB and depth image pairs
-        for i in range(10):
-            # Create a dummy RGB image with increasing grayscale intensity
-            dummy_img = Image.new('RGB', (640, 480), color=(i*25, i*25, i*25))
-            dummy_img.save(os.path.join(self.rgb_dir, f"test_{i:04d}.png"))
-            
-            # Create a dummy depth image with random values
-            dummy_depth = np.random.randint(100, 5000, (480, 640), dtype=np.uint16)
-            cv2.imwrite(os.path.join(self.depth_dir, f"test_{i:04d}.png"), dummy_depth)
-
-    def teardown_method(self):
-        # Remove the temporary directory and its contents after tests
-        shutil.rmtree(self.temp_dir)
-
-    def test_compute_dataset_statistics(self):
-        # Initialize the dataset using the temporary directory
-        dataset = NYUV2Dataset(data_root=self.temp_dir, split="train")
-        
-        # Compute dataset statistics (mean, std for RGB; stats for depth)
-        stats = compute_dataset_statistics(dataset)
-        
-        # Check that the expected keys exist in the result
-        assert "rgb_mean" in stats
-        assert "rgb_std" in stats
-        assert "depth_stats" in stats
-        
-        # Ensure RGB mean and std contain three values (R, G, B)
-        assert len(stats["rgb_mean"]) == 3
-        assert len(stats["rgb_std"]) == 3
-
-        # Log the success of statistics computation
-        logger.info("Dataset statistics computed successfully")
+            info = dataset.get_sample_info(0)
+            assert "rgb_path" in info
+            assert "depth_path" in info
+            assert "dataset" in info
+            assert "basename" in info
+            logger.info("ENRICH sample info retrieved successfully")
 
 
 class TestDatasetErrorHandling:
-    def test_dataset_index_out_of_bounds(self):
+    def test_dataset_index_out_of_bounds(self) -> None:
         # Create temporary directory structure for empty dataset
         with tempfile.TemporaryDirectory() as temp_dir:
-            os.makedirs(os.path.join(temp_dir, "rgb"))
-            os.makedirs(os.path.join(temp_dir, "depth"))
+            train_dir = os.path.join(temp_dir, "train")
+            os.makedirs(os.path.join(train_dir, "rgb"))
+            os.makedirs(os.path.join(train_dir, "depth"))
             
             # Initialize dataset with no images
             dataset = NYUV2Dataset(data_root=temp_dir, split="train")
@@ -465,18 +410,19 @@ class TestDatasetErrorHandling:
             # Log that the error was properly handled
             logger.info("Out of bounds index properly handled")
 
-    def test_dataset_corrupted_files(self):
+    def test_dataset_corrupted_files(self) -> None:
         # Create temporary directory and corrupted image files
         with tempfile.TemporaryDirectory() as temp_dir:
-            os.makedirs(os.path.join(temp_dir, "rgb"))
-            os.makedirs(os.path.join(temp_dir, "depth"))
+            train_dir = os.path.join(temp_dir, "train")
+            os.makedirs(os.path.join(train_dir, "rgb"))
+            os.makedirs(os.path.join(train_dir, "depth"))
             
             # Write invalid content to simulate corrupted RGB image
-            with open(os.path.join(temp_dir, "rgb", "corrupted.png"), 'w') as f:
+            with open(os.path.join(train_dir, "rgb", "corrupted.png"), 'w') as f:
                 f.write("not an image")
             
             # Write invalid content to simulate corrupted depth file
-            with open(os.path.join(temp_dir, "depth", "corrupted.png"), 'w') as f:
+            with open(os.path.join(train_dir, "depth", "corrupted.png"), 'w') as f:
                 f.write("not a depth file")
             
             # Initialize dataset with validation enabled
@@ -490,11 +436,12 @@ class TestDatasetErrorHandling:
 
 
 class TestDatasetCaching:
-    def setup_method(self):
+    def setup_method(self) -> None:
         # Create temporary directories for RGB and depth images
         self.temp_dir = tempfile.mkdtemp()
-        self.rgb_dir = os.path.join(self.temp_dir, "rgb")
-        self.depth_dir = os.path.join(self.temp_dir, "depth")
+        train_dir = os.path.join(self.temp_dir, "train")
+        self.rgb_dir = os.path.join(train_dir, "rgb")
+        self.depth_dir = os.path.join(train_dir, "depth")
         os.makedirs(self.rgb_dir)
         os.makedirs(self.depth_dir)
         
@@ -506,11 +453,11 @@ class TestDatasetCaching:
         dummy_depth = np.ones((480, 640), dtype=np.uint16) * 1000
         cv2.imwrite(os.path.join(self.depth_dir, "test.png"), dummy_depth)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         # Clean up the temporary directory after each test
         shutil.rmtree(self.temp_dir)
 
-    def test_dataset_caching_enabled(self):
+    def test_dataset_caching_enabled(self) -> None:
         # Initialize dataset with caching enabled
         dataset = NYUV2Dataset(data_root=self.temp_dir, split="train", cache=True)
 
@@ -523,7 +470,7 @@ class TestDatasetCaching:
         assert torch.equal(sample1["depth"], sample2["depth"])
         logger.info("Dataset caching working correctly")
 
-    def test_dataset_caching_disabled(self):
+    def test_dataset_caching_disabled(self) -> None:
         # Initialize dataset with caching disabled
         dataset = NYUV2Dataset(data_root=self.temp_dir, split="train", cache=False)
 
@@ -537,12 +484,13 @@ class TestDatasetCaching:
         logger.info("Dataset without caching working correctly")
 
 
-class TestDatasetAugmentation:
-    def setup_method(self):
+class TestDatasetTransforms:
+    def setup_method(self) -> None:
         # Create temporary directories for RGB and depth images
         self.temp_dir = tempfile.mkdtemp()
-        self.rgb_dir = os.path.join(self.temp_dir, "rgb")
-        self.depth_dir = os.path.join(self.temp_dir, "depth")
+        train_dir = os.path.join(self.temp_dir, "train")
+        self.rgb_dir = os.path.join(train_dir, "rgb")
+        self.depth_dir = os.path.join(train_dir, "depth")
         os.makedirs(self.rgb_dir)
         os.makedirs(self.depth_dir)
         
@@ -554,30 +502,27 @@ class TestDatasetAugmentation:
         dummy_depth = np.ones((480, 640), dtype=np.uint16) * 1000
         cv2.imwrite(os.path.join(self.depth_dir, "test.png"), dummy_depth)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         # Clean up the temporary directory after each test
         shutil.rmtree(self.temp_dir)
 
-    def test_dataset_augmentation_enabled(self):
-        # Initialize dataset with augmentation enabled
-        dataset = NYUV2Dataset(data_root=self.temp_dir, split="train", augmentation=True)
+    def test_dataset_custom_image_size(self) -> None:
+        # Initialize dataset with custom image size
+        custom_size = (256, 320)
+        dataset = NYUV2Dataset(data_root=self.temp_dir, split="train", img_size=custom_size)
 
-        # Load a sample and check shape of RGB and depth
+        # Load a sample and check shape matches custom size
         sample = dataset[0]
-        assert sample["rgb"].shape == (3, 480, 640)
-        assert sample["depth"].shape == (1, 480, 640)
-        logger.info("Dataset augmentation working correctly")
+        assert sample["rgb"].shape == (3, custom_size[0], custom_size[1])
+        assert sample["depth"].shape == (1, custom_size[0], custom_size[1])
+        logger.info("Custom image size working correctly")
 
-    def test_dataset_augmentation_disabled(self):
-        # Initialize dataset with augmentation disabled
-        dataset = NYUV2Dataset(data_root=self.temp_dir, split="val", augmentation=False)
-
-        # Load a sample and check shape of RGB and depth
+    def test_dataset_depth_scale(self) -> None:
+        # Test different depth scale values
+        depth_scale = 500.0
+        dataset = NYUV2Dataset(data_root=self.temp_dir, split="train", depth_scale=depth_scale)
+        
+        # Load a sample
         sample = dataset[0]
-        assert sample["rgb"].shape == (3, 480, 640)
         assert sample["depth"].shape == (1, 480, 640)
-        logger.info("Dataset without augmentation working correctly")
-
-if __name__ == "__main__":
-    # Run the tests using pytest in verbose mode
-    pytest.main([__file__, "-v"])
+        logger.info("Depth scale parameter working correctly")

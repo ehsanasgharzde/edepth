@@ -1,7 +1,7 @@
 # File: models/decoders/decoder_fixed.py
 # ehsanasgharzde - COMPLETE DPT DECODER WITH FUSION BLOCK IMPLEMENTATION
 # hosseinsolymanzadeh - PROPER COMMENTING
-# ehsanasgharzde - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTINOS AND BASECLASS LEVEL METHODS
+# ehsanasgharzde - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import torch
 import torch.nn as nn

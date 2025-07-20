@@ -1,6 +1,6 @@
 # File: models/backbones/backbone_fixed.py
 # ehsanasgharzde - FULL BACKBONE VIT IMPLEMENTATION
-# ehsanasgharzde - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTINOS AND BASECLASS LEVEL METHODS
+# ehsanasgharzde - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import torch
 import torch.nn as nn
