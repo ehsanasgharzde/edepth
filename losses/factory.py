@@ -1,7 +1,7 @@
 # FILE: losses/factory.py
 # ehsanasgharzde - Complete Loss Factory Implementation
 # hosseinsolymanzadeh - PROPER COMMENTING
-# ehsanasgharzde - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTINOS AND BASECLASS LEVEL METHODS
+# ehsanasgharzde - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import logging
 from typing import Type, Dict, Optional, Any, List, Callable

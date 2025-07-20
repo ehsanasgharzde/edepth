@@ -1,7 +1,7 @@
 # FILE: datasets/enrich_dataset.py
 # ehsanasgharzde - ENRICH DATASET
 # hosseinsolymanzadeh - PROPER COMMENTING
-# ehsanasgharzde, hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTINOS AND BASECLASS LEVEL METHODS
+# ehsanasgharzde, hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import numpy as np
 import torchvision.transforms as T
