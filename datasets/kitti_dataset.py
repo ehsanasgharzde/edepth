@@ -1,7 +1,7 @@
 # FILE: datasets/kitti_dataset.py
 # ehsanasgharzde - KITTI DATASET
 # hosseinsolymanzadeh - PROPER COMMENTING
-# ehsanasgharzde, hosseinsolymanzadeh- FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTINOS AND BASECLASS LEVEL METHODS
+# ehsanasgharzde, hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTINOS AND BASECLASS LEVEL METHODS
 
 import os
 import glob
@@ -198,4 +198,3 @@ class KITTIDataset(BaseDataset):
             'sequence': sample['sequence'],
             'basename': sample['basename']
         }
-        
