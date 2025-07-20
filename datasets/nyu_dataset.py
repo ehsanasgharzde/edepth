@@ -141,7 +141,7 @@ class NYUV2Dataset(BaseDataset):
             pixel_count += rgb.shape[0] * rgb.shape[1]
             
             # Collect valid depth pixels for statistics
-            valid_mask = self.create_valid_depth_mask(depth)
+            valid_mask = self.create_default_mask(depth)
             depth_values.append(depth[valid_mask])
         
         # Concatenate all valid depth values into one array
@@ -194,7 +194,7 @@ class NYUV2Dataset(BaseDataset):
             depth = depth.unsqueeze(0)
         
         # Create a valid mask for depth pixels (boolean mask)
-        valid_mask = self.create_valid_depth_mask(depth.squeeze(0).numpy())
+        valid_mask = self.create_default_mask(depth.squeeze(0).numpy())
         
         # Return dictionary containing processed data and metadata
         return {

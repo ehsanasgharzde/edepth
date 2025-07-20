@@ -1,6 +1,7 @@
 # FILE: utils/dataset.py
-# ehsanasgharzde, hosseinsolymanzadeh- FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTINOS AND BASECLASS LEVEL METHODS
+# ehsanasgharzde, hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTINOS AND BASECLASS LEVEL METHODS
 
+from abc import abstractmethod
 from typing import Tuple, Dict, Any, List
 import numpy as np
 from torch.utils.data import Dataset
@@ -9,6 +10,7 @@ import logging
 from albumentations.pytorch import ToTensorV2
 import albumentations as A
 import cv2
+from abc import abstractmethod
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,7 @@ class BaseDataset(Dataset):
             raise ValueError("depth_scale must be positive")
 
     # Check that the dataset directories for RGB and depth images exist and contain files
+    @abstractmethod
     def validate_dataset_structure(self):
         pass
 
@@ -83,10 +86,16 @@ class BaseDataset(Dataset):
             return False
 
     # Create a boolean mask indicating valid depth pixels
-    def create_valid_depth_mask(self, depth: np.ndarray) -> np.ndarray:
-        return ((depth > 0) & 
-                (~np.isnan(depth)) & 
-                (~np.isinf(depth))).astype(bool)
+    def create_default_mask(self, target: np.ndarray) -> np.ndarray:
+        mask = ((target > 0) & 
+                (~np.isnan(target)) & 
+                (~np.isinf(target))).astype(bool)
+
+        if mask.sum() == 0:
+            logger.warning("No valid pixels found after applying depth range mask")
+            return np.zeros_like(target, dtype=bool)
+        
+        return mask
 
     # Define the transformation pipeline applied to RGB images
     def get_rgb_transform(self, MEAN: tuple = (0.485, 0.456, 0.406), STD: tuple = (0.229, 0.224, 0.225)):
@@ -112,7 +121,8 @@ class BaseDataset(Dataset):
         return A.Compose(transforms) #type: ignore 
 
     # Load paired RGB and depth samples into a list of dictionaries
-    def load_samples(self) -> List[Dict[str, Path]]: # type: ignore
+    @abstractmethod
+    def load_samples(self) -> List[Dict[str, Path]]:
         pass
 
     def load_rgb(self, path: Path) -> np.ndarray:

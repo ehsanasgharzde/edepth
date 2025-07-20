@@ -9,7 +9,8 @@ import torch.nn.functional as F
 from typing import Optional
 import logging
 
-from ..utils.loss import *
+from utils.loss import *
+from utils.core import *
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +35,16 @@ class SiLogLoss(DepthLoss):
         
         # Compute log difference
         log_diff = log_pred - log_target
+
+        if mask is None:
+            mask = create_default_mask(log_diff)
         
         # Apply mask
-        log_diff_masked = apply_mask_and_validate(log_diff, mask)
+        log_diff_masked = apply_mask_safely(log_diff, mask)
         
         # Compute scale-invariant loss
-        term1 = torch.mean(log_diff_masked ** 2)
-        term2 = self.lambda_var * (torch.mean(log_diff_masked) ** 2)
+        term1 = torch.mean(log_diff_masked ** 2) # type: ignore
+        term2 = self.lambda_var * (torch.mean(log_diff_masked) ** 2) # type: ignore
         
         return term1 - term2
 
@@ -49,8 +53,12 @@ class MAELoss(BaseLoss):
     def compute_loss(self, pred: torch.Tensor, target: torch.Tensor, 
                     mask: Optional[torch.Tensor] = None, **kwargs) -> torch.Tensor:
         abs_diff = torch.abs(pred - target)
-        abs_diff_masked = apply_mask_and_validate(abs_diff, mask)
-        return torch.mean(abs_diff_masked)
+
+        if mask is None:
+            mask = create_default_mask(abs_diff)
+
+        abs_diff_masked = apply_mask_safely(abs_diff, mask)
+        return torch.mean(abs_diff_masked) # type: ignore
 
 
 class RMSELoss(BaseLoss):
@@ -65,8 +73,12 @@ class RMSELoss(BaseLoss):
     def compute_loss(self, pred: torch.Tensor, target: torch.Tensor, 
                     mask: Optional[torch.Tensor] = None, **kwargs) -> torch.Tensor:
         squared_diff = (pred - target) ** 2
-        squared_diff_masked = apply_mask_and_validate(squared_diff, mask)
-        mse = torch.mean(squared_diff_masked)
+
+        if mask is None:
+            mask = create_default_mask(squared_diff)
+
+        squared_diff_masked = apply_mask_safely(squared_diff, mask)
+        mse = torch.mean(squared_diff_masked) # type: ignore
         return torch.sqrt(mse + self.eps)
 
 
@@ -82,16 +94,20 @@ class BerHuLoss(BaseLoss):
     def compute_loss(self, pred: torch.Tensor, target: torch.Tensor, 
                     mask: Optional[torch.Tensor] = None, **kwargs) -> torch.Tensor:
         abs_diff = torch.abs(pred - target)
-        abs_diff_masked = apply_mask_and_validate(abs_diff, mask)
+
+        if mask is None:
+            mask = create_default_mask(abs_diff)
+
+        abs_diff_masked = apply_mask_safely(abs_diff, mask)
         
         # Compute adaptive threshold
-        c = self.threshold * torch.max(abs_diff_masked)
+        c = self.threshold * torch.max(abs_diff_masked) # type: ignore
         
         # Apply BerHu formula
         l1_mask = abs_diff_masked <= c
         l2_mask = ~l1_mask
         
-        berhu_loss = torch.zeros_like(abs_diff_masked)
+        berhu_loss = torch.zeros_like(abs_diff_masked) # type: ignore
         berhu_loss[l1_mask] = abs_diff_masked[l1_mask]
         berhu_loss[l2_mask] = (abs_diff_masked[l2_mask] ** 2 + c ** 2) / (2 * c)
         
@@ -109,24 +125,33 @@ class GradientConsistencyLoss(GradientBasedLoss):
         self.weight_y = weight_y
     
     def compute_gradient_loss(self, pred_grad_x: torch.Tensor, pred_grad_y: torch.Tensor,
-                             target_grad_x: torch.Tensor, target_grad_y: torch.Tensor,
-                             mask: Optional[torch.Tensor] = None, **kwargs) -> torch.Tensor:
+                            target_grad_x: torch.Tensor, target_grad_y: torch.Tensor,
+                            mask: Optional[torch.Tensor] = None, **kwargs) -> torch.Tensor:
         # Compute gradient differences
         grad_diff_x = torch.abs(pred_grad_x - target_grad_x)
         grad_diff_y = torch.abs(pred_grad_y - target_grad_y)
-        
-        # Apply mask if provided (need to adjust mask size for gradients)
-        if mask is not None:
-            mask_x = mask[..., :, 1:] if mask.shape[-1] > 1 else None
-            mask_y = mask[..., 1:, :] if mask.shape[-2] > 1 else None
+
+        # Create or adjust mask to match gradient shapes
+        if mask is None:
+            mask_x = create_default_mask(grad_diff_x)
+            mask_y = create_default_mask(grad_diff_y)
         else:
-            mask_x = mask_y = None
-        
-        # Compute weighted loss
-        loss_x = torch.mean(apply_mask_and_validate(grad_diff_x, mask_x))
-        loss_y = torch.mean(apply_mask_and_validate(grad_diff_y, mask_y))
-        
+            # Assume input is (B, 1, H, W) or (B, H, W)
+            if mask.ndim == 4:
+                mask_x = mask[:, :, :, 1:] if mask.shape[-1] > 1 else None
+                mask_y = mask[:, :, 1:, :] if mask.shape[-2] > 1 else None
+            elif mask.ndim == 3:
+                mask_x = mask[:, :, 1:] if mask.shape[-1] > 1 else None
+                mask_y = mask[:, 1:, :] if mask.shape[-2] > 1 else None
+            else:
+                raise ValueError(f"Unsupported mask shape: {mask.shape}")
+
+        # Compute masked gradient loss
+        loss_x = torch.mean(apply_mask_safely(grad_diff_x, mask_x)) # type: ignore
+        loss_y = torch.mean(apply_mask_safely(grad_diff_y, mask_y)) # type: ignore
+
         return self.weight_x * loss_x + self.weight_y * loss_y
+
 
 
 class EdgeAwareSmoothnessLoss(ImageGuidedLoss):  
@@ -165,13 +190,13 @@ class EdgeAwareSmoothnessLoss(ImageGuidedLoss):
             mask_y = mask[..., 1:, :] if mask.shape[-2] > 1 else None
             
             if mask_x is not None:
-                smoothness_x = apply_mask_and_validate(smoothness_x, mask_x)
+                smoothness_x = apply_mask_safely(smoothness_x, mask_x)
             if mask_y is not None:
-                smoothness_y = apply_mask_and_validate(smoothness_y, mask_y)
+                smoothness_y = apply_mask_safely(smoothness_y, mask_y)
         
         # Compute final loss as average weighted smoothness in both directions
-        loss_x = torch.mean(smoothness_x) if smoothness_x.numel() > 0 else torch.tensor(0.0)
-        loss_y = torch.mean(smoothness_y) if smoothness_y.numel() > 0 else torch.tensor(0.0)
+        loss_x = torch.mean(smoothness_x) if smoothness_x.numel() > 0 else torch.tensor(0.0) # type: ignore
+        loss_y = torch.mean(smoothness_y) if smoothness_y.numel() > 0 else torch.tensor(0.0) # type: ignore
         
         total_loss = self.beta * (loss_x + loss_y)
         

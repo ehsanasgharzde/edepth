@@ -272,7 +272,7 @@ class UnrealStereo4KDataset(BaseDataset):
             pixel_count += rgb.shape[0] * rgb.shape[1]
             
             # Create mask of valid depth pixels and accumulate valid depth values
-            valid_mask = self.create_valid_depth_mask(depth)
+            valid_mask = self.create_default_mask(depth)
             if valid_mask.any():
                 depth_values.append(depth[valid_mask])
         
@@ -331,7 +331,7 @@ class UnrealStereo4KDataset(BaseDataset):
             depth_tensor = depth_tensor.unsqueeze(0) #type: ignore
         
         # Create valid depth mask tensor
-        valid_mask = self.create_valid_depth_mask(depth)
+        valid_mask = self.create_default_mask(depth)
         
         # Build result dictionary with tensors and metadata
         result = {

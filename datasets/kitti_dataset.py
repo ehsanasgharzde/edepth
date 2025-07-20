@@ -131,7 +131,7 @@ class KITTIDataset(BaseDataset):
             rgb_sq_sums += np.mean(rgb_np ** 2, axis=(0,1))  # Add per-channel squared mean
             pixel_count += 1
             
-            mask = self.create_valid_depth_mask(depth)  # Create valid depth mask
+            mask = self.create_default_mask(depth)  # Create valid depth mask
             if mask is not None:
                 valid_depth = depth[mask]                # Extract valid depth values
                 if valid_depth.size > 0:
@@ -187,7 +187,7 @@ class KITTIDataset(BaseDataset):
         rgb_tensor = self.rgb_transform(rgb)       # Apply RGB transform
         depth_tensor = self.depth_transform(depth) # Apply depth transform
         
-        valid_mask = self.create_valid_depth_mask(depth)  # Generate valid mask
+        valid_mask = self.create_default_mask(depth)  # Generate valid mask
         mask_tensor = T.ToTensor()(valid_mask.astype(np.float32)) if valid_mask is not None else None
         
         # Return dictionary containing input tensors and metadata

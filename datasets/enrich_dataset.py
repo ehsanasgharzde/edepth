@@ -186,7 +186,7 @@ class ENRICHDataset(BaseDataset):
             pixel_count += rgb.shape[0] * rgb.shape[1]
 
             # Extract valid depth values using mask
-            valid_mask = self.create_valid_depth_mask(depth)
+            valid_mask = self.create_default_mask(depth)
             if valid_mask.any():
                 depth_values.append(depth[valid_mask])
 
