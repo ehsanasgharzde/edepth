@@ -1,197 +1,208 @@
 # File: models/decoders/decoder_fixed.py
 # ehsanasgharzde - COMPLETE DPT DECODER WITH FUSION BLOCK IMPLEMENTATION
 # hosseinsolymanzadeh - PROPER COMMENTING
+# ehsanasgharzde - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTINOS AND BASECLASS LEVEL METHODS
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import logging
-from typing import List, Tuple, Optional
+from typing import List, Tuple
+
+# Import centralized utilities
+from ...utils.model_validation import ( # type: ignore
+    validate_feature_tensors, validate_tensor_input, validate_interpolation_target,
+    validate_dpt_features, TensorValidationError
+)
+from ...utils.model_utils import ( # type: ignore
+    interpolate_features, initialize_weights, ModelInfo
+)
+from ...utils.model_utils import get_model_info # type: ignore
 
 logger = logging.getLogger(__name__)
 
 class FusionBlock(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, scale_factor: int = 2, use_attention: bool = False):
         super().__init__()
-        self.scale_factor = scale_factor  # Upsampling scale factor
-        self.use_attention = use_attention  # Flag to enable or disable attention mechanism
+        self.scale_factor = scale_factor
+        self.use_attention = use_attention
 
         # Projection layer to match the required output channels
         self.proj = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, 1),  # 1x1 convolution for channel reduction or expansion
-            nn.BatchNorm2d(out_channels),             # Normalize output to stabilize training
-            nn.ReLU(inplace=True)                     # Apply ReLU activation
+            nn.Conv2d(in_channels, out_channels, 1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
         )
 
         # Optional attention module based on squeeze-and-excitation
         if use_attention:
             self.attention = nn.Sequential(
-                nn.AdaptiveAvgPool2d(1),                                  # Global average pooling to capture channel context
-                nn.Conv2d(out_channels, max(1, out_channels // 16), 1),  # Reduce channels (bottleneck)
-                nn.ReLU(inplace=True),                                   # Non-linear activation
-                nn.Conv2d(max(1, out_channels // 16), out_channels, 1),  # Expand back to original channel size
-                nn.Sigmoid()                                             # Output attention weights between 0 and 1
+                nn.AdaptiveAvgPool2d(1),
+                nn.Conv2d(out_channels, max(1, out_channels // 16), 1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(max(1, out_channels // 16), out_channels, 1),
+                nn.Sigmoid()
             )
 
-        # Refinement layer to process the fused feature map
-        self.refine = nn.Sequential(
-            nn.Conv2d(out_channels, out_channels, 3, padding=1),  # 3x3 convolution with padding to preserve size
-            nn.BatchNorm2d(out_channels),                         # Normalize features
-            nn.ReLU(inplace=True)                                 # Activation function
-        )
+        # Initialize weights using centralized utility
+        initialize_weights(self, init_type='xavier_uniform')
 
-        # Initialize the weights of all layers
-        self._init_weights()
-    
-    def _init_weights(self):
-        # Apply initialization to each module
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                # Kaiming initialization suited for ReLU
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)  # Zero-initialize biases
-            elif isinstance(m, nn.BatchNorm2d):
-                # Initialize BatchNorm weights to 1 and biases to 0
-                nn.init.ones_(m.weight)
-                nn.init.zeros_(m.bias)
-    
-    def forward(self, x: torch.Tensor, skip: Optional[torch.Tensor] = None) -> torch.Tensor:
-        # Project the input feature map to the desired number of output channels
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Validate input using centralized validation
+        validate_tensor_input(x, "FusionBlock input", expected_dims=4)
+
+        # Apply projection
         x = self.proj(x)
 
-        # Perform upsampling if required
-        if self.scale_factor != 1:
-            x = F.interpolate(x, scale_factor=self.scale_factor, mode='bilinear', align_corners=False)
-
-        # Add skip connection if available
-        if skip is not None:
-            if skip.shape[-2:] != x.shape[-2:]:
-                # Resize skip feature to match current feature size
-                skip = F.interpolate(skip, size=x.shape[-2:], mode='bilinear', align_corners=False)
-            x = x + skip  # Element-wise addition of skip and upsampled features
-
-        # Apply attention mechanism if enabled
+        # Apply attention if enabled
         if self.use_attention:
-            att = self.attention(x)  # Compute attention weights
-            x = x * att  # Multiply features by attention map (channel-wise scaling)
+            attention_weights = self.attention(x)
+            x = x * attention_weights
 
-        # Apply refinement to the fused features
-        return self.refine(x)
+        # Upsample using centralized interpolation utility
+        if self.scale_factor > 1:
+            target_size = (x.size(2) * self.scale_factor, x.size(3) * self.scale_factor)
+            x = interpolate_features(x, target_size, mode='bilinear', align_corners=False)
 
+        return x
 
 class DPT(nn.Module):
-    def __init__(self, 
-                 backbone_channels: List[int], 
-                 decoder_channels: List[int], 
-                 num_stages: int = 4,
-                 use_attention: bool = False,
-                 final_activation: str = 'sigmoid'):
+    def __init__(
+        self,
+        backbone_channels: List[int],
+        decoder_channels: List[int] = [256, 512, 1024, 1024],
+        use_attention: bool = False,
+        final_activation: str = 'sigmoid'
+    ):
         super().__init__()
 
-        # Ensure the number of input and output channels matches the number of stages
-        if len(backbone_channels) != num_stages:
-            raise ValueError(f"backbone_channels length {len(backbone_channels)} != num_stages {num_stages}")
-        if len(decoder_channels) != num_stages:
-            raise ValueError(f"decoder_channels length {len(decoder_channels)} != num_stages {num_stages}")
-        
-        self.num_stages = num_stages  # Total number of decoder stages
-        self.final_activation = final_activation  # Type of final activation to apply on output
+        # Validate inputs using centralized validation
+        if len(backbone_channels) != len(decoder_channels):
+            raise TensorValidationError(
+                f"Backbone channels ({len(backbone_channels)}) must match "
+                f"decoder channels ({len(decoder_channels)})"
+            )
 
-        logger.info(f"Initializing DPT with {num_stages} stages, attention: {use_attention}")
-        
-        # Create projection layers to align backbone feature dimensions to decoder dimensions
-        self.projections = nn.ModuleList([
-            self._make_projection(in_ch, out_ch) 
-            for in_ch, out_ch in zip(backbone_channels, decoder_channels)
-        ])
-        
-        # Create fusion blocks for each stage, including optional attention and upsampling
-        self.fusions = nn.ModuleList([
-            FusionBlock(decoder_channels[i], decoder_channels[i], 
-                       scale_factor=2 if i > 0 else 1,  # No upsampling in first stage
-                       use_attention=use_attention)
-            for i in range(num_stages)
-        ])
-        
-        # Final convolution to reduce feature map to single-channel depth map
-        self.output_conv = nn.Conv2d(decoder_channels[-1], 1, 1)
+        self.backbone_channels = backbone_channels
+        self.decoder_channels = decoder_channels
+        self.num_stages = len(decoder_channels)
+        self.use_attention = use_attention
+        self.final_activation = final_activation
 
-        # Initialize weights for all layers
-        self._init_weights()
-    
-    def _make_projection(self, in_channels: int, out_channels: int) -> nn.Sequential:
-        # Build a 1x1 Conv + BN + ReLU block for projecting backbone features to decoder space
+        # Create projection layers for backbone features
+        self.projections = nn.ModuleList()
+        for i, (in_ch, out_ch) in enumerate(zip(backbone_channels, decoder_channels)):
+            proj = self.make_projection(in_ch, out_ch)
+            self.projections.append(proj)
+
+        # Create fusion blocks for upsampling and feature fusion
+        self.fusion_blocks = nn.ModuleList()
+        for i in range(self.num_stages - 1):
+            fusion = FusionBlock(
+                decoder_channels[i + 1], 
+                decoder_channels[i], 
+                scale_factor=2,
+                use_attention=use_attention
+            )
+            self.fusion_blocks.append(fusion)
+
+        # Final output head
+        self.output_head = nn.Sequential(
+            nn.Conv2d(decoder_channels[0], decoder_channels[0] // 2, 3, padding=1),
+            nn.BatchNorm2d(decoder_channels[0] // 2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(decoder_channels[0] // 2, 1, 1)
+        )
+
+        # Initialize weights using centralized utility
+        initialize_weights(self, init_type='xavier_uniform')
+
+        logger.info(f"DPT decoder initialized with {self.num_stages} stages")
+
+    def make_projection(self, in_channels: int, out_channels: int) -> nn.Module:
         return nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 1),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
         )
-    
-    def _init_weights(self):
-        # Initialize convolutional and batch norm layers
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')  # He initialization
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)  # Zero-initialize bias if present
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.ones_(m.weight)  # Set BN scale (gamma) to 1
-                nn.init.zeros_(m.bias)   # Set BN bias (beta) to 0
-    
-    def forward(self, backbone_features: List[torch.Tensor]) -> torch.Tensor:
-        # Forward pass through the DPT decoder
 
-        # Ensure correct number of features is provided from backbone
-        if len(backbone_features) != self.num_stages:
-            raise ValueError(f"Expected {self.num_stages} features, got {len(backbone_features)}")
-        
-        logger.debug(f"Processing {len(backbone_features)} backbone features")
-        
-        # Apply projection layers to each backbone feature map
-        projected = [proj(feat) for proj, feat in zip(self.projections, backbone_features)]
-        
-        # First fusion stage uses only the projected feature (no skip)
-        x = self.fusions[0](projected[0])
-        logger.debug(f"Stage 0 output shape: {x.shape}")
-        
-        # Process remaining stages with skip connections
-        for i in range(1, self.num_stages):
-            x = self.fusions[i](x, projected[i])
-            logger.debug(f"Stage {i} output shape: {x.shape}")
-        
-        # Upsample final feature map to match input resolution (typically 4x upscale)
-        target_size = [s * 4 for s in backbone_features[-1].shape[-2:]]
-        x = F.interpolate(x, size=target_size, mode='bilinear', align_corners=False)
-        
-        # Produce final depth prediction
-        depth = self.output_conv(x)
-        
-        # Apply selected activation function to output
+    def forward(self, backbone_features: List[torch.Tensor]) -> torch.Tensor:
+        # Validate backbone features using centralized validation
+        validate_dpt_features(backbone_features)
+        validate_feature_tensors(
+            backbone_features, 
+            expected_channels=self.backbone_channels,
+            expected_count=self.num_stages,
+            name="backbone_features"
+        )
+
+        # Project backbone features to decoder channels
+        projected_features = []
+        for i, (feat, proj) in enumerate(zip(backbone_features, self.projections)):
+            projected = proj(feat)
+            projected_features.append(projected)
+            logger.debug(f"Projected feature {i}: {feat.shape} -> {projected.shape}")
+
+        # Start from the deepest feature (highest resolution in feature hierarchy)
+        current_feature = projected_features[-1]
+
+        # Progressive fusion from deep to shallow features
+        for i in range(self.num_stages - 2, -1, -1):
+            # Get the target feature to fuse with
+            target_feature = projected_features[i]
+
+            # Apply fusion block to upsample and prepare current feature
+            fusion_block = self.fusion_blocks[i]
+            upsampled_feature = fusion_block(current_feature)
+
+            # Ensure spatial compatibility using centralized interpolation
+            if upsampled_feature.shape[-2:] != target_feature.shape[-2:]:
+                target_size = target_feature.shape[-2:]
+                upsampled_feature = interpolate_features(
+                    upsampled_feature, 
+                    target_size, 
+                    mode='bilinear', 
+                    align_corners=False
+                )
+
+            # Fuse features by addition
+            current_feature = upsampled_feature + target_feature
+            logger.debug(f"Fused feature at stage {i}: {current_feature.shape}")
+
+        # Generate final depth prediction
+        depth = self.output_head(current_feature)
+
+        # Apply final activation
         if self.final_activation == 'sigmoid':
             depth = torch.sigmoid(depth)
         elif self.final_activation == 'tanh':
             depth = torch.tanh(depth)
         elif self.final_activation == 'relu':
-            depth = F.relu(depth)
-        
+            depth = torch.relu(depth)
+        # 'none' or any other value: no activation
+
+        # Validate output using centralized validation
+        validate_tensor_input(depth, "DPT output", expected_dims=4)
+
         logger.debug(f"Final depth shape: {depth.shape}")
         return depth
 
-def validate_features(features: List[torch.Tensor], expected_channels: List[int]) -> None:
-    # Check that the number of input feature maps matches the expected count
-    if len(features) != len(expected_channels):
-        raise ValueError(f"Feature count mismatch: expected {len(expected_channels)}, got {len(features)}")
-    
-    # Iterate through each feature tensor and its corresponding expected channel count
-    for idx, (feat, expected_c) in enumerate(zip(features, expected_channels)):
-        # Validate that the current feature's channel size matches the expected value
-        if feat.size(1) != expected_c:
-            raise ValueError(f"Channel mismatch at index {idx}: expected {expected_c}, got {feat.size(1)}")
+    def get_model_info(self) -> ModelInfo:
+        return get_model_info(self)
 
+# Utility functions using centralized validation (replacing duplicated functions)
+def validate_features_compatibility(
+    features: List[torch.Tensor], 
+    expected_channels: List[int]
+) -> None:
+    validate_feature_tensors(
+        features, 
+        expected_channels=expected_channels,
+        name="feature_compatibility"
+    )
 
-def interpolate_to_size(features: torch.Tensor, target_size: Tuple[int, int]) -> torch.Tensor:
-    # Resize the input feature map to the given spatial dimensions (height, width)
-    # Use bilinear interpolation for smooth resizing
-    # align_corners=False avoids artifacts when interpolating feature maps
-    return F.interpolate(features, size=target_size, mode='bilinear', align_corners=False)
+def interpolate_to_target_size(
+    features: torch.Tensor, 
+    target_size: Tuple[int, int]
+) -> torch.Tensor:
+    validate_interpolation_target(features, target_size)
+    return interpolate_features(features, target_size, mode='bilinear', align_corners=False)
