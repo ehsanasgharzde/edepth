@@ -1,4 +1,4 @@
-# FILE: tests/test_framework.py
+# FILE: test.py
 # ehsanasgharzde - COMPREHENSIVE TEST RUNNER SCRIPT
 # hosseinsolymanzadeh - PROPER COMMENTING
 
