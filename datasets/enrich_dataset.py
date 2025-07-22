@@ -12,7 +12,7 @@ from pathlib import Path
 import torchvision.transforms as T
 from typing import Dict, List, Tuple, Any
 
-from ..utils.dataset import BaseDataset
+from utils.dataset_utils import BaseDataset
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +124,7 @@ class ENRICHDataset(BaseDataset):
         # Return cached depth if available
         if self.cache_data is not None:
             cache_key = self._get_cache_key(path, 'depth_exr')
-            with self.cache_lock:
+            with self.cache_lock: # type: ignore
                 if cache_key in self.cache_data:
                     return self.cache_data[cache_key]
         
@@ -152,7 +152,7 @@ class ENRICHDataset(BaseDataset):
             
             # Cache if enabled
             if self.cache_data is not None:
-                with self.cache_lock:
+                with self.cache_lock: # type: ignore
                     self.cache_data[cache_key] = depth.copy()
             
             return depth

@@ -10,7 +10,7 @@ import numpy as np
 import torchvision.transforms as T
 from typing import List, Dict, Optional, Tuple, Any
 
-from ..utils.dataset import BaseDataset 
+from utils.dataset_utils import BaseDataset 
 
 logger = logging.getLogger(__name__)
 
@@ -122,8 +122,8 @@ class KITTIDataset(BaseDataset):
         
         for i in range(sample_count):
             sample = self.samples[i]
-            rgb = self.load_rgb(sample['rgb'])      # Load RGB image
-            depth = self.load_depth(sample['depth'])# Load depth map
+            rgb = self.load_rgb(sample['rgb'])      # Load RGB image # type: ignore
+            depth = self.load_depth(sample['depth'])# Load depth map # type: ignore
             
             if rgb is None or depth is None:
                 continue  # Skip if image or depth couldn't be loaded
@@ -149,7 +149,7 @@ class KITTIDataset(BaseDataset):
         
         # Compute min, max, and percentiles of depth if data was collected
         if depth_values:
-            depth_values = np.concatenate(depth_values)
+            depth_values = np.concatenate(depth_values) # type: ignore
             depth_min = float(np.min(depth_values))
             depth_max = float(np.max(depth_values))
             depth_percentiles = {
@@ -178,8 +178,8 @@ class KITTIDataset(BaseDataset):
         
         sample = self.samples[idx]  # Get sample dictionary by index
         
-        rgb = self.load_rgb(sample['rgb'])      # Load RGB image
-        depth = self.load_depth(sample['depth'])# Load depth map
+        rgb = self.load_rgb(sample['rgb'])      # Load RGB image # type: ignore
+        depth = self.load_depth(sample['depth'])# Load depth map # type: ignore
         
         # Raise error if loading failed
         if rgb is None or depth is None:

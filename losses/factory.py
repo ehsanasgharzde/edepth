@@ -22,7 +22,7 @@ from losses.losses import (
     MultiLoss,
 )
 
-from ..utils.loss import compute_loss_statistics
+from utils.loss_utils import compute_loss_statistics
 
 # Setup logger for factory operations
 logger = logging.getLogger(__name__)

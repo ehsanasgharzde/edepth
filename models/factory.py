@@ -11,18 +11,17 @@ import logging
 import traceback
 
 # Import centralized utilities
-from .edepth import edepth
-from ..configs.model_config import (
+from edepth import edepth
+from configs.model_config import (
     get_model_config, list_available_models, validate_config,
     get_backbone_config, list_available_backbones
 )
-from ..utils.model_validation import ( 
+from utils.model_validation import ( 
     validate_backbone_name, ConfigValidationError,
     validate_decoder_channels
 )
-from ..utils.model_utils import ( # type: ignore
-    get_model_info, ModelInfo, load_model_checkpoint,
-    save_model_checkpoint
+from utils.model_utils import (
+    get_model_info, load_model_checkpoint,
 )
 
 logger = logging.getLogger(__name__)

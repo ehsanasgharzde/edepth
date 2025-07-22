@@ -10,12 +10,12 @@ import logging
 import torch.utils.checkpoint as checkpoint
 
 # Import centralized utilities
-from ...configs.model_config import get_backbone_config, list_available_backbones
-from ...utils.model_validation import (
+from configs.model_config import get_backbone_config, list_available_backbones
+from utils.model_validation import (
     validate_backbone_name, validate_patch_size, validate_extract_layers, 
     validate_spatial_dimensions, validate_vit_input
 )
-from ...utils.model_utils import ( 
+from utils.model_utils import ( 
     calculate_patch_grid, sequence_to_spatial, interpolate_features,
     cleanup_hooks, apply_gradient_checkpointing
 ) 

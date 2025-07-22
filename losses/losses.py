@@ -9,8 +9,8 @@ import torch.nn.functional as F
 from typing import Optional
 import logging
 
-from utils.loss import *
-from utils.core import *
+from utils.loss_utils import *
+from utils.core_utils import *
 
 logger = logging.getLogger(__name__)
 

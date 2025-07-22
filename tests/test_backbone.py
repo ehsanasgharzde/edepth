@@ -11,17 +11,17 @@ import logging
 from typing import Dict, Any, Tuple
 
 # Updated imports to match new module structure
-from ..models.backbones.backbone import ViT
-from ..configs.model_config import (
+from models.backbones.backbone import ViT
+from configs.model_config import (
     get_backbone_config, list_available_backbones, get_default_extract_layers,
     validate_config
 )
-from ..utils.model_validation import (
+from utils.model_validation import (
     validate_backbone_name, validate_vit_input, validate_extract_layers,
     validate_patch_size, validate_spatial_dimensions, ModelValidationError, 
     TensorValidationError,
 )
-from ..utils.model_utils import (
+from utils.model_utils import (
     calculate_patch_grid, sequence_to_spatial, interpolate_features, 
     get_model_info, count_parameters, freeze_model,
     cleanup_hooks,
@@ -399,7 +399,7 @@ def test_gradient_checkpointing_comprehensive(use_checkpointing: bool) -> None:
     
     # Create dummy loss and backward pass
     loss = sum(feat.mean() for feat in features)
-    loss.backward()
+    loss.backward() # type: ignore
     
     # Validate gradient flow
     validate_gradient_flow(x, "checkpointing_input")
@@ -472,7 +472,7 @@ def test_device_compatibility_comprehensive() -> None:
     
     # Test mixed precision if available
     if hasattr(torch, 'autocast'):
-        with torch.autocast('cuda'):
+        with torch.autocast('cuda'):  # type: ignore
             with torch.no_grad():
                 features_mixed = model_gpu(x_gpu)
         
@@ -605,11 +605,11 @@ def test_performance_benchmarking() -> None:
             start_event = torch.cuda.Event(enable_timing=True)
             end_event = torch.cuda.Event(enable_timing=True)
             
-            start_event.record()
+            start_event.record()  # type: ignore
             with torch.no_grad():
                 for _ in range(num_iterations):
                     _ = model(x)
-            end_event.record()
+            end_event.record()  # type: ignore
             torch.cuda.synchronize()
             
             elapsed_time = start_event.elapsed_time(end_event) / num_iterations
@@ -698,7 +698,7 @@ def test_end_to_end_workflow_comprehensive() -> None:
         # Test gradient flow if training
         if is_training:
             loss = sum(feat.mean() for feat in features)
-            loss.backward()
+            loss.backward()  # type: ignore
             validate_gradient_flow(x, f"e2e_batch_{batch_size}")
             
             # Clear gradients

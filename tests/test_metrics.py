@@ -8,16 +8,16 @@ import pytest
 import numpy as np
 from typing import Dict, List, Optional, Callable, Union, Any
 
-from ..metrics.metrics import (
+from metrics.metrics import (
     rmse, mae, delta1, delta2, delta3, silog, delta_metric,
     compute_bootstrap_ci, validate_metric_sanity, create_metric_report,
     compute_all_metrics, compute_batch_metrics
 )
-from ..metrics.factory import (
+from metrics.factory import (
     get_metric, get_all_metrics, get_core_metrics,
     list_metrics, create_evaluator, METRICS
 )
-from ..utils.core import (
+from utils.core_utils import (
     create_default_mask, apply_mask_safely, resize_tensors_to_scale,
     validate_tensor_inputs, validate_depth_image_compatibility,
     validate_depth_values, validate_numerical_stability

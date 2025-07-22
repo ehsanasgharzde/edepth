@@ -9,7 +9,7 @@ from pathlib import Path
 import torchvision.transforms as T
 from typing import Dict, Tuple, List, Any
 
-from ..utils.dataset import BaseDataset
+from utils.dataset_utils import BaseDataset
 
 logger = logging.getLogger(__name__)
 

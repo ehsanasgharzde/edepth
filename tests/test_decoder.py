@@ -11,14 +11,14 @@ import logging
 from typing import List, Tuple
 
 # Updated imports to match the new module structure
-from ..models.decoders.decoder import (
+from models.decoders.decoder import (
     FusionBlock, DPT, validate_features_compatibility, interpolate_to_target_size
 )
-from ..utils.model_validation import (
+from utils.model_validation import (
     validate_dpt_features, validate_tensor_input, validate_interpolation_target,
     TensorValidationError
 )
-from ..utils.model_utils import (
+from utils.model_utils import (
     interpolate_features, get_model_info, ModelInfo, 
     count_parameters
 )

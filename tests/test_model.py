@@ -8,23 +8,23 @@ import torch
 import pytest
 import logging
 import torch.nn as nn
-from typing import Dict, Any, List, Tuple
+from typing import Callable, Dict, Any, List, Tuple
 
 # Updated imports based on new module structure
-from ..models.edepth import edepth
-from ..models.factory import (
+from models.edepth import edepth
+from models.factory import (
     create_model, get_available_models, ModelBuilder,
     get_model_info_summary, estimate_model_parameters, validate_model_config,
 )
 
 # Import centralized utilities
-from ..utils.model_utils import (
+from utils.model_utils import (
     get_model_info, ModelInfo, interpolate_features
 )
-from ..utils.model_validation import (
+from utils.model_validation import (
     validate_tensor_input, TensorValidationError, ConfigValidationError
 )
-from ..configs.model_config import (
+from configs.model_config import (
     get_model_config, get_backbone_config, list_available_models,
     list_available_backbones
 )
@@ -237,10 +237,10 @@ def test_model_checkpointing() -> None:
     
     # Test saving checkpoint
     if hasattr(model, 'save_checkpoint'):
-        model.save_checkpoint(checkpoint_path)
+        model.save_checkpoint(checkpoint_path)  # type: ignore
         
         # Test loading checkpoint
-        loaded_metadata: Dict[str, Any] = model.load_checkpoint(checkpoint_path)
+        loaded_metadata: Dict[str, Any] = model.load_checkpoint(checkpoint_path)  # type: ignore
         assert isinstance(loaded_metadata, dict), "Checkpoint metadata should be a dictionary"
 
 def test_interpolation_functionality() -> None:
@@ -409,7 +409,7 @@ def run_comprehensive_test_suite() -> Dict[str, Any]:
         'failures': []
     }
     
-    test_functions: List[callable] = [
+    test_functions: List[Callable] = [
         test_model_creation_basic,
         test_model_creation_with_config,
         test_model_forward_pass_basic,

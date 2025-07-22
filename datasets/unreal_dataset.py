@@ -10,7 +10,7 @@ from pathlib import Path
 import torchvision.transforms as T
 from typing import Dict, List, Optional, Tuple, Any
 
-from ..utils.dataset import BaseDataset
+from utils.dataset_utils import BaseDataset
 
 logger = logging.getLogger(__name__)
 

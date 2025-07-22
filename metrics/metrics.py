@@ -7,7 +7,7 @@ import logging
 import numpy as np
 from typing import Optional, Tuple, Union, List, Dict
 
-from ..utils.core import create_default_mask, apply_mask_safely, validate_tensor_inputs
+from utils.core_utils import create_default_mask, apply_mask_safely, validate_tensor_inputs
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +214,7 @@ def compute_batch_metrics(pred_batch: torch.Tensor, target_batch: torch.Tensor,
             for metric in metrics_list:
                 if metric in METRICS:  #Check if metric exists in registry
                     # Call the metric method dynamically and store the result
-                    value = METRICS(metric)(pred, target, mask)
+                    value = METRICS[metric](pred, target, mask)
                     results[metric].append(value)
                 else:
                     # Log a warning for unknown metrics and append NaN

@@ -13,29 +13,28 @@ from unittest.mock import Mock, patch
 from typing import Dict, List, Tuple, Optional, Any
 
 # Import loss factory functions
-from ..losses.factory import (
+from losses.factory import (
     create_loss, create_combined_loss, validate_loss_config,
     register_loss, get_registered_losses, get_loss_weights_schedule,
     export_loss_configuration, integrate_with_trainer, visualize_loss_components,
-    LOSS_REGISTRY, LOSS_CONFIG_SCHEMAS
 )
 
 # Import concrete loss implementations
-from ..losses.losses import (
+from losses.losses import (
     SiLogLoss, EdgeAwareSmoothnessLoss, GradientConsistencyLoss,
     MultiScaleLoss, BerHuLoss, RMSELoss,
     MAELoss, MultiLoss,
 )
 
 # Import base loss classes and utility functions
-from ..utils.loss import (
+from utils.loss_utils import (
     compute_loss_statistics, compute_spatial_gradients, compute_image_gradient_magnitude,
     compute_edge_weights, ImageGuidedLoss, BaseLoss,
     DepthLoss, GradientBasedLoss,
 )
 
 # Import core utility functions
-from ..utils.core import (
+from utils.core_utils import (
     create_default_mask, apply_mask_safely, validate_tensor_inputs,
     validate_numerical_stability, resize_tensors_to_scale, validate_depth_image_compatibility
 )
@@ -235,7 +234,7 @@ def test_compute_loss_statistics() -> None:
 # Base loss class tests
 def test_base_loss_abstract() -> None:
     with pytest.raises(TypeError):
-        BaseLoss()  # Should fail - abstract class
+        BaseLoss()  # Should fail - abstract class  # type: ignore
 
 def test_depth_loss_validation(dummy_data: Dict[str, Any]) -> None:
     # Create a concrete implementation for testing

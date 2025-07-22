@@ -6,21 +6,19 @@ import torch
 import torch.nn as nn
 from typing import List, Optional, Dict, Any
 import logging
-import warnings
 
 # Import centralized utilities
-from .backbones.backbone import ViT
-from .decoders.decoder import DPT
-from ..configs.model_config import get_model_config, list_available_models, validate_config 
-from ..utils.model_validation import (
+from backbones.backbone import ViT
+from decoders.decoder import DPT
+from configs.model_config import get_model_config, list_available_models, validate_config 
+from utils.model_validation import (
     validate_backbone_name, validate_decoder_channels, validate_model_output, 
     validate_vit_input, validate_dpt_features, ConfigValidationError
 )
-from ..utils.model_utils import ( # type: ignore
+from utils.model_utils import (
     get_model_info, ModelInfo, save_model_checkpoint, load_model_checkpoint, 
-    calculate_feature_shapes, validate_feature_compatibility
+    calculate_feature_shapes, validate_feature_compatibility, print_model_summary
 )
-from ..utils.model_utils import print_model_summary # type: ignore
 
 logger = logging.getLogger(__name__)
 

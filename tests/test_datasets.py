@@ -13,11 +13,11 @@ import numpy as np
 from PIL import Image
 from typing import List, Tuple
 
-from ..datasets import create_dataset, register_dataset, get_available_datasets, dataset_info
-from ..datasets.nyu_dataset import NYUV2Dataset
-from ..datasets.kitti_dataset import KITTIDataset
-from ..datasets.enrich_dataset import ENRICHDataset
-from ..utils.dataset import BaseDataset
+from datasets import create_dataset, register_dataset, get_available_datasets, dataset_info
+from datasets.nyu_dataset import NYUV2Dataset
+from datasets.kitti_dataset import KITTIDataset
+from datasets.enrich_dataset import ENRICHDataset
+from utils.dataset_utils import BaseDataset
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)

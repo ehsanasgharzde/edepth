@@ -9,14 +9,14 @@ import logging
 from typing import List, Tuple
 
 # Import centralized utilities
-from ...utils.model_validation import ( # type: ignore
+from utils.model_validation import (
     validate_feature_tensors, validate_tensor_input, validate_interpolation_target,
     validate_dpt_features, TensorValidationError
 )
-from ...utils.model_utils import ( # type: ignore
+from utils.model_utils import (
     interpolate_features, initialize_weights, ModelInfo
 )
-from ...utils.model_utils import get_model_info # type: ignore
+from utils.model_utils import get_model_info 
 
 logger = logging.getLogger(__name__)
 
