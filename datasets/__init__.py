@@ -3,10 +3,10 @@
 # hosseinsolymanzadeh - PROPER COMMENTING
 # ehsanasgharzde, hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
+import torch
 import logging
 from pathlib import Path
 from typing import Dict, Any, List
-import torch
 
 logger = logging.getLogger(__name__)
 

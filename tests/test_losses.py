@@ -601,3 +601,4 @@ def test_complete_training_workflow(dummy_data: Dict[str, Any]) -> None:
     stats = compute_loss_statistics(loss_history)
     assert stats['count'] == 3
     assert all(v >= 0 for v in loss_history)
+    

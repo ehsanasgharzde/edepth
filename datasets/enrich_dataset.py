@@ -275,3 +275,4 @@ class ENRICHDataset(BaseDataset):
             'depth': depth_tensor,
             'valid_mask': T.ToTensor()(valid_mask.astype(np.float32)),  # type: ignore
         }
+    

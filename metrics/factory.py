@@ -41,3 +41,4 @@ def create_evaluator(metric_names: Optional[List[str]] = None) -> Callable:
         return {name: METRICS[name](pred, target, mask) for name in metric_names}
     
     return evaluator
+

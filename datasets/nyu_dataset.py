@@ -202,3 +202,4 @@ class NYUV2Dataset(BaseDataset):
             'depth': depth,
             'valid_mask': T.ToTensor()(valid_mask.astype(np.float32))
         }
+    
