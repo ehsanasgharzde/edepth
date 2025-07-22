@@ -1,23 +1,12 @@
 # FILE: metrics/factory.py
-#hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
+# hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
-from typing import Dict, Callable, List, Optional
 import logging
+from typing import Dict, Callable, List, Optional
 
-from .metrics import (
-    rmse, mae, delta1, delta2, delta3, silog)
+from .metrics import METRICS
 
 logger = logging.getLogger(__name__)
-
-# Core evaluation metrics
-METRICS = {
-    'rmse': rmse,
-    'mae': mae,
-    'delta1': delta1,
-    'delta2': delta2,
-    'delta3': delta3,
-    'silog': silog
-}
 
 def get_metric(name: str) -> Callable:
     # Get a metric function by name.

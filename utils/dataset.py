@@ -1,29 +1,33 @@
 # FILE: utils/dataset.py
 # ehsanasgharzde, hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
-from abc import abstractmethod
-from typing import Tuple, Dict, Any, List
-import numpy as np
-from torch.utils.data import Dataset
-from pathlib import Path
-import logging
-from albumentations.pytorch import ToTensorV2
-import albumentations as A
 import cv2
+import logging
+import hashlib
+import threading
+import numpy as np
+from pathlib import Path
+import albumentations as A
 from abc import abstractmethod
+from cachetools import LRUCache
+from torch.utils.data import Dataset
+from typing import Tuple, Dict, Any, List
+from albumentations.pytorch import ToTensorV2
+
 
 logger = logging.getLogger(__name__)
 
 
 class BaseDataset(Dataset):
     def __init__(self, data_root: str, split: str = 'train', img_size: Tuple[int, int] = (480, 640),
-                 depth_scale: float = 1.0, cache: bool = False, validate_data: bool = True):
+                 depth_scale: float = 1.0, cache: bool = False, validate_data: bool = True, cache_size: int = 1000):
         # Initialize dataset configuration
         self.data_root = Path(data_root)
         self.split = split
         self.img_size = img_size
         self.depth_scale = depth_scale
         self.cache = cache
+        self.cache_lock = threading.RLock()
         self.validate_data = validate_data
         self.rgb_transform = self.get_rgb_transform()
         self.depth_transform = self.get_depth_transform()
@@ -40,7 +44,12 @@ class BaseDataset(Dataset):
         self.samples = self.load_samples()
         
         # Initialize cache dictionary if caching is enabled
-        self.cache_data = {} if cache else None
+        if cache:
+            self.cache_data = LRUCache(maxsize=cache_size)
+            self.cache_lock = threading.Lock()  # For thread safety
+        else:
+            self.cache_data = None
+            self.cache_lock = None
     
     def validate_initialization_parameters(self):
         # Check if the data root directory exists
@@ -125,10 +134,17 @@ class BaseDataset(Dataset):
     def load_samples(self) -> List[Dict[str, Path]]:
         pass
 
+    def _get_cache_key(self, path: Path, method: str) -> str:
+        path_str = str(path.resolve())
+        return f"{method}:{hashlib.md5(path_str.encode()).hexdigest()}"
+
     def load_rgb(self, path: Path) -> np.ndarray:
         # Return cached RGB image if available
-        if self.cache and path in self.cache_data:  # type: ignore
-            return self.cache_data[path]  # type: ignore
+        if self.cache_data is not None:
+            cache_key = self._get_cache_key(path, 'rgb')
+            with self.cache_lock:
+                if cache_key in self.cache_data:
+                    return self.cache_data[cache_key]
         
         try:
             # Load image using OpenCV (BGR format)
@@ -144,8 +160,9 @@ class BaseDataset(Dataset):
                 img = cv2.resize(img, (self.img_size[1], self.img_size[0]), interpolation=cv2.INTER_LINEAR)
             
             # Cache image if caching enabled
-            if self.cache:
-                self.cache_data[path] = img  # type: ignore
+            if self.cache_data is not None:
+                with self.cache_lock:
+                    self.cache_data[cache_key] = img.copy()
             
             return img
         except Exception as e:
@@ -155,8 +172,11 @@ class BaseDataset(Dataset):
     # Load a depth image from disk, scale and clip it, optionally caching it
     def load_depth(self, path: Path) -> np.ndarray:
         # Return cached depth if caching enabled and depth exists in cache
-        if self.cache and path in self.cache_data: #type: ignore 
-            return self.cache_data[path] #type: ignore 
+        if self.cache_data is not None:
+            cache_key = self._get_cache_key(path, 'depth')
+            with self.cache_lock:
+                if cache_key in self.cache_data:
+                    return self.cache_data[cache_key]
         
         # Read depth image preserving original values (16-bit or 32-bit)
         depth = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
@@ -171,8 +191,9 @@ class BaseDataset(Dataset):
         depth[invalid_mask] = 0.0
         
         # Cache the depth if caching is enabled
-        if self.cache:
-            self.cache_data[path] = depth #type: ignore 
+        if self.cache_data is not None:
+            with self.cache_lock:
+                self.cache_data[cache_key] = depth.copy()
         
         return depth
 
