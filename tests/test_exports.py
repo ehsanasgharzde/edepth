@@ -1,693 +1,809 @@
 # FILE: tests/test_exports.py
 # ehsanasgharzde - TESTS FOR EXPORT FUNCTIONALITY
 # hosseinsolymanzadeh - PROPER COMMENTING
+# hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
+import os
 import torch
-import torch.nn as nn
 import pytest
 import tempfile
-import os
-from pathlib import Path
+import torch.nn as nn
 from unittest.mock import MagicMock, patch
-from utils.export import (
-    ExportConfig, ExportFormat, OptimizationLevel, QuantizationType, Precision,
-    ModelOptimizer, QuantizationHandler, ONNXExporter, TorchScriptExporter,
-    ExportManager, DeploymentTester, export_onnx, export_torchscript,
-    print_deployment_plan, ExportError, OptimizationError, QuantizationError,
-    ValidationError, DeploymentError
+
+# Import all classes and functions from updated export module
+from export import (
+    ExportFormat, OptimizationLevel, QuantizationType,
+    ExportConfig, ExportResult, ModelExporter,
+    export_model_multiple_formats, quick_export_onnx, quick_export_torchscript,
+    ONNX_AVAILABLE
 )
-from models.edepth import edepth
 
-class TestExportConfig:
-    # Test initialization of ExportConfig with specific parameters
-    def test_config_initialization(self):
-        config = ExportConfig(
-            export_format=ExportFormat.ONNX,
-            batch_size=2,
-            input_shape=(2, 3, 224, 224)
+# Test ExportFormat enum functionality
+def test_export_format_enum() -> None:
+    # Verify all expected export formats are available
+    assert ExportFormat.ONNX.value == "onnx"
+    assert ExportFormat.TORCHSCRIPT_TRACE.value == "torchscript_trace"
+    assert ExportFormat.TORCHSCRIPT_SCRIPT.value == "torchscript_script"
+    assert ExportFormat.TENSORRT.value == "tensorrt"
+    assert ExportFormat.OPENVINO.value == "openvino"
+    assert ExportFormat.COREML.value == "coreml"
+
+
+# Test OptimizationLevel enum functionality
+def test_optimization_level_enum() -> None:
+    # Verify all optimization levels are correctly defined
+    assert OptimizationLevel.NONE.value == "none"
+    assert OptimizationLevel.BASIC.value == "basic"
+    assert OptimizationLevel.ADVANCED.value == "advanced"
+
+
+# Test QuantizationType enum functionality
+def test_quantization_type_enum() -> None:
+    # Verify all quantization types are correctly defined
+    assert QuantizationType.NONE.value == "none"
+    assert QuantizationType.DYNAMIC.value == "dynamic"
+    assert QuantizationType.STATIC.value == "static"
+    assert QuantizationType.QAT.value == "qat"
+
+
+# Test ExportConfig dataclass initialization and defaults
+def test_export_config_initialization() -> None:
+    # Test basic config creation with required parameters
+    config = ExportConfig(
+        format=ExportFormat.ONNX,
+        output_path="/tmp/model.onnx"
+    )
+    
+    # Verify required fields are set correctly
+    assert config.format == ExportFormat.ONNX
+    assert config.output_path == "/tmp/model.onnx"
+    
+    # Verify default values
+    assert config.input_shape == (1, 3, 224, 224)
+    assert config.optimization_level == OptimizationLevel.BASIC
+    assert config.quantization == QuantizationType.NONE
+    assert config.opset_version == 11
+    assert config.batch_size == 1
+    assert config.precision == "fp32"
+
+
+# Test ExportConfig with custom parameters
+def test_export_config_custom_parameters() -> None:
+    # Test config creation with custom parameters
+    config = ExportConfig(
+        format=ExportFormat.TORCHSCRIPT_TRACE,
+        output_path="/tmp/model.pt",
+        input_shape=(2, 3, 256, 256),
+        optimization_level=OptimizationLevel.ADVANCED,
+        quantization=QuantizationType.DYNAMIC,
+        batch_size=4,
+        precision="fp16"
+    )
+    
+    # Verify custom parameters are set correctly
+    assert config.format == ExportFormat.TORCHSCRIPT_TRACE
+    assert config.input_shape == (2, 3, 256, 256)
+    assert config.optimization_level == OptimizationLevel.ADVANCED
+    assert config.quantization == QuantizationType.DYNAMIC
+    assert config.batch_size == 4
+    assert config.precision == "fp16"
+
+
+# Test ExportResult dataclass initialization
+def test_export_result_initialization() -> None:
+    # Test successful export result
+    result = ExportResult(
+        success=True,
+        export_path="/tmp/model.onnx",
+        model_size_mb=45.2,
+        export_time_seconds=12.5
+    )
+    
+    # Verify result fields are set correctly
+    assert result.success is True
+    assert result.export_path == "/tmp/model.onnx"
+    assert result.model_size_mb == 45.2
+    assert result.export_time_seconds == 12.5
+    assert result.optimization_applied is False
+    assert result.quantization_applied is False
+
+
+# Test ModelExporter initialization with model instance
+def test_model_exporter_with_model_instance() -> None:
+    # Create a simple model and initialize exporter
+    model = nn.Linear(10, 5)
+    exporter = ModelExporter(model=model)
+    
+    # Verify exporter is initialized correctly
+    assert exporter.model is model
+    assert isinstance(exporter.model, nn.Module)
+
+
+# Test ModelExporter initialization with model name
+def test_model_exporter_with_model_name() -> None:
+    # Mock the create_model function to avoid dependencies
+    with patch('export.create_model') as mock_create:
+        mock_model = nn.Linear(10, 5)
+        mock_create.return_value = mock_model
+        
+        # Initialize exporter with model name
+        exporter = ModelExporter(model_name="test_model")
+        
+        # Verify create_model was called and exporter is initialized
+        mock_create.assert_called_once_with("test_model", None)
+        assert exporter.model is mock_model
+
+
+# Test ModelExporter raises error when neither model nor model_name provided
+def test_model_exporter_validation_error() -> None:
+    # Test that ValueError is raised when required parameters are missing
+    with pytest.raises(ValueError, match="Either model instance or model_name must be provided"):
+        ModelExporter()
+
+
+# Test ModelExporter from_checkpoint class method
+def test_model_exporter_from_checkpoint() -> None:
+    # Mock the create_model_from_checkpoint function
+    with patch('export.create_model_from_checkpoint') as mock_create:
+        mock_model = nn.Linear(10, 5)
+        mock_create.return_value = mock_model
+        
+        # Create exporter from checkpoint
+        exporter = ModelExporter.from_checkpoint(
+            checkpoint_path="/tmp/checkpoint.pth",
+            model_name="test_model"
         )
-        # Check if export_format is set correctly
-        assert config.export_format == ExportFormat.ONNX
-        # Check if batch_size is set correctly
-        assert config.batch_size == 2
-        # Check if input_shape is set correctly
-        assert config.input_shape == (2, 3, 224, 224)
-        # Check default optimization_level
-        assert config.optimization_level == OptimizationLevel.NONE
-        # Check default quantization_type
-        assert config.quantization_type == QuantizationType.NONE
-        # Check default precision
-        assert config.precision == Precision.FP32
-
-    # Test the post-initialization behavior of ExportConfig
-    def test_config_post_init(self):
-        # Create a temporary directory for output_dir
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config = ExportConfig(
-                export_format=ExportFormat.ONNX,
-                output_dir=temp_dir
-            )
-            # Verify the temporary directory exists
-            assert os.path.exists(temp_dir)
-
-
-class TestModelOptimizer:
-    # Test optimization when no optimization is requested
-    def test_no_optimization(self):
-        config = ExportConfig(
-            export_format=ExportFormat.ONNX,
-            optimization_level=OptimizationLevel.NONE
+        
+        # Verify create_model_from_checkpoint was called correctly
+        mock_create.assert_called_once_with(
+            checkpoint_path="/tmp/checkpoint.pth",
+            model_name="test_model",
+            config=None
         )
-        optimizer = ModelOptimizer(config)
-        model = nn.Linear(10, 5)
-        # Optimize model with no optimization level
-        optimized = optimizer.optimize_model(model)
-        # The optimized model should be the same as the input model
-        assert optimized is model
+        assert exporter.model is mock_model
 
-    # Test basic level optimization on a simple CNN model
-    def test_basic_optimization(self):
+
+# Test ModelExporter ONNX export functionality
+@pytest.mark.skipif(not ONNX_AVAILABLE, reason="ONNX not available")
+def test_model_exporter_onnx_export() -> None:
+    # Create a simple model and exporter
+    model = nn.Conv2d(3, 16, 3)
+    exporter = ModelExporter(model=model)
+    
+    # Create temporary file for export
+    with tempfile.NamedTemporaryFile(suffix='.onnx', delete=False) as f:
+        export_path = f.name
+    
+    try:
+        # Configure ONNX export
         config = ExportConfig(
-            export_format=ExportFormat.ONNX,
+            format=ExportFormat.ONNX,
+            output_path=export_path,
+            input_shape=(1, 3, 224, 224)
+        )
+        
+        # Perform export
+        result = exporter.export(config)
+        
+        # Verify export succeeded
+        assert result.success is True
+        assert result.export_path == export_path
+        assert os.path.exists(export_path)
+        assert result.model_size_mb is not None
+        assert result.model_size_mb > 0
+        
+    finally:
+        # Clean up temporary file
+        if os.path.exists(export_path):
+            os.unlink(export_path)
+
+
+# Test ModelExporter TorchScript trace export functionality
+def test_model_exporter_torchscript_trace_export() -> None:
+    # Create a simple model and exporter
+    model = nn.Conv2d(3, 16, 3)
+    exporter = ModelExporter(model=model)
+    
+    # Create temporary file for export
+    with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as f:
+        export_path = f.name
+    
+    try:
+        # Configure TorchScript trace export
+        config = ExportConfig(
+            format=ExportFormat.TORCHSCRIPT_TRACE,
+            output_path=export_path,
+            input_shape=(1, 3, 224, 224)
+        )
+        
+        # Perform export
+        result = exporter.export(config)
+        
+        # Verify export succeeded
+        assert result.success is True
+        assert result.export_path == export_path
+        assert os.path.exists(export_path)
+        assert result.model_size_mb is not None
+        
+    finally:
+        # Clean up temporary file
+        if os.path.exists(export_path):
+            os.unlink(export_path)
+
+
+# Test ModelExporter TorchScript script export functionality
+def test_model_exporter_torchscript_script_export() -> None:
+    # Create a simple model and exporter
+    model = nn.Linear(10, 5)  # Linear models script better than conv layers
+    exporter = ModelExporter(model=model)
+    
+    # Create temporary file for export
+    with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as f:
+        export_path = f.name
+    
+    try:
+        # Configure TorchScript script export
+        config = ExportConfig(
+            format=ExportFormat.TORCHSCRIPT_SCRIPT,
+            output_path=export_path,
+            input_shape=(1, 10)
+        )
+        
+        # Perform export
+        result = exporter.export(config)
+        
+        # Verify export succeeded (may fallback to trace)
+        assert result.success is True
+        assert result.export_path == export_path
+        assert os.path.exists(export_path)
+        
+    finally:
+        # Clean up temporary file
+        if os.path.exists(export_path):
+            os.unlink(export_path)
+
+
+# Test ModelExporter with optimization applied
+def test_model_exporter_with_optimization() -> None:
+    # Create a model with layers that can be optimized
+    model = nn.Sequential(
+        nn.Conv2d(3, 64, 3),
+        nn.BatchNorm2d(64),
+        nn.ReLU()
+    )
+    exporter = ModelExporter(model=model)
+    
+    # Create temporary file for export
+    with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as f:
+        export_path = f.name
+    
+    try:
+        # Configure export with basic optimization
+        config = ExportConfig(
+            format=ExportFormat.TORCHSCRIPT_TRACE,
+            output_path=export_path,
             optimization_level=OptimizationLevel.BASIC
         )
-        optimizer = ModelOptimizer(config)
-        # Define a simple CNN model
-        model = nn.Sequential(
+        
+        # Perform export
+        result = exporter.export(config)
+        
+        # Verify export succeeded and optimization was applied
+        assert result.success is True
+        assert result.optimization_applied is True
+        
+    finally:
+        # Clean up temporary file
+        if os.path.exists(export_path):
+            os.unlink(export_path)
+
+
+# Test ModelExporter with quantization applied
+def test_model_exporter_with_quantization() -> None:
+    # Create a model suitable for quantization
+    model = nn.Sequential(
+        nn.Linear(64, 32),
+        nn.ReLU(),
+        nn.Linear(32, 10)
+    )
+    exporter = ModelExporter(model=model)
+    
+    # Create temporary file for export
+    with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as f:
+        export_path = f.name
+    
+    try:
+        # Configure export with dynamic quantization
+        config = ExportConfig(
+            format=ExportFormat.TORCHSCRIPT_TRACE,
+            output_path=export_path,
+            quantization=QuantizationType.DYNAMIC
+        )
+        
+        # Perform export
+        result = exporter.export(config)
+        
+        # Verify export succeeded and quantization was applied
+        assert result.success is True
+        assert result.quantization_applied is True
+        
+    finally:
+        # Clean up temporary file
+        if os.path.exists(export_path):
+            os.unlink(export_path)
+
+
+# Test ModelExporter export failure handling
+def test_model_exporter_export_failure() -> None:
+    # Create a mock model that will cause export failure
+    model = MagicMock()
+    model.eval = MagicMock(side_effect=RuntimeError("Model evaluation failed"))
+    
+    exporter = ModelExporter(model=model)
+    
+    # Configure export
+    config = ExportConfig(
+        format=ExportFormat.TORCHSCRIPT_TRACE,
+        output_path="/tmp/will_fail.pt"
+    )
+    
+    # Perform export and expect failure
+    result = exporter.export(config)
+    
+    # Verify export failed with error message
+    assert result.success is False
+    assert result.error_message is not None
+    assert "Model evaluation failed" in result.error_message
+
+
+# Test ModelExporter unsupported format handling
+def test_model_exporter_unsupported_format() -> None:
+    model = nn.Linear(10, 5)
+    exporter = ModelExporter(model=model)
+    
+    # Create a mock unsupported format
+    with patch.object(ExportFormat, 'TENSORRT') as mock_format:
+        mock_format.value = "unsupported_format"
+        
+        config = ExportConfig(
+            format=mock_format,
+            output_path="/tmp/model.unsupported"
+        )
+        
+        # Perform export and expect failure
+        result = exporter.export(config)
+        
+        # Verify export failed
+        assert result.success is False
+        assert result.error_message is not None
+
+
+# Test ModelExporter benchmark functionality
+def test_model_exporter_benchmark() -> None:
+    # Create a simple model and exporter
+    model = nn.Linear(100, 50)
+    exporter = ModelExporter(model=model)
+    
+    # Run benchmark with small number of runs for testing
+    results = exporter.benchmark_model(
+        input_shape=(1, 100),
+        num_runs=5,
+        warmup_runs=2
+    )
+    
+    # Verify benchmark results contain expected metrics
+    assert 'total_time_seconds' in results
+    assert 'average_time_seconds' in results
+    assert 'throughput_fps' in results
+    assert 'average_time_ms' in results
+    
+    # Verify metrics are reasonable values
+    assert results['total_time_seconds'] > 0
+    assert results['average_time_seconds'] > 0
+    assert results['throughput_fps'] > 0
+    assert results['average_time_ms'] > 0
+
+
+# Test export_model_multiple_formats utility function
+def test_export_model_multiple_formats() -> None:
+    # Create a simple model for export
+    model = nn.Conv2d(3, 16, 3)
+    
+    # Use temporary directory for exports
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Export to multiple formats
+        formats = [ExportFormat.TORCHSCRIPT_TRACE]  # Use only available format
+        if ONNX_AVAILABLE:
+            formats.append(ExportFormat.ONNX)
+        
+        results = export_model_multiple_formats(
+            model=model,
+            output_dir=temp_dir,
+            model_name="test_model",
+            formats=formats,
+            input_shape=(1, 3, 224, 224)
+        )
+        
+        # Verify results contain expected formats
+        assert len(results) == len(formats)
+        
+        for fmt in formats:
+            assert fmt in results
+            result = results[fmt]
+            assert isinstance(result, ExportResult)
+            
+            # Check if export succeeded or failed with proper error
+            if result.success:
+                assert result.export_path is not None
+                assert os.path.exists(result.export_path)
+
+
+# Test quick_export_onnx utility function
+@pytest.mark.skipif(not ONNX_AVAILABLE, reason="ONNX not available")
+def test_quick_export_onnx() -> None:
+    # Create a simple model for export
+    model = nn.Conv2d(3, 16, 3)
+    
+    # Create temporary file for export
+    with tempfile.NamedTemporaryFile(suffix='.onnx', delete=False) as f:
+        export_path = f.name
+    
+    try:
+        # Perform quick ONNX export
+        result = quick_export_onnx(
+            model=model,
+            output_path=export_path,
+            input_shape=(1, 3, 224, 224)
+        )
+        
+        # Verify export succeeded
+        assert result.success is True
+        assert result.export_path == export_path
+        assert os.path.exists(export_path)
+        
+    finally:
+        # Clean up temporary file
+        if os.path.exists(export_path):
+            os.unlink(export_path)
+
+
+# Test quick_export_torchscript utility function
+def test_quick_export_torchscript() -> None:
+    # Create a simple model for export
+    model = nn.Conv2d(3, 16, 3)
+    
+    # Create temporary file for export
+    with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as f:
+        export_path = f.name
+    
+    try:
+        # Perform quick TorchScript export
+        result = quick_export_torchscript(
+            model=model,
+            output_path=export_path,
+            input_shape=(1, 3, 224, 224)
+        )
+        
+        # Verify export succeeded
+        assert result.success is True
+        assert result.export_path == export_path
+        assert os.path.exists(export_path)
+        
+    finally:
+        # Clean up temporary file
+        if os.path.exists(export_path):
+            os.unlink(export_path)
+
+
+# Test export with different input shapes
+def test_export_different_input_shapes() -> None:
+    # Test various input shapes
+    input_shapes = [
+        (1, 3, 224, 224),
+        (2, 3, 256, 256),
+        (1, 1, 128, 128),
+        (4, 3, 320, 320)
+    ]
+    
+    for input_shape in input_shapes:
+        # Create appropriate model for input shape
+        model = nn.Conv2d(input_shape[1], 16, 3)
+        exporter = ModelExporter(model=model)
+        
+        # Create temporary file for export
+        with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as f:
+            export_path = f.name
+        
+        try:
+            # Configure export with specific input shape
+            config = ExportConfig(
+                format=ExportFormat.TORCHSCRIPT_TRACE,
+                output_path=export_path,
+                input_shape=input_shape
+            )
+            
+            # Perform export
+            result = exporter.export(config)
+            
+            # Verify export succeeded for this input shape
+            assert result.success is True, f"Export failed for input shape {input_shape}"
+            
+        finally:
+            # Clean up temporary file
+            if os.path.exists(export_path):
+                os.unlink(export_path)
+
+
+# Test export with different precision settings
+def test_export_different_precisions() -> None:
+    # Test different precision settings
+    precisions = ["fp32", "fp16"]
+    
+    for precision in precisions:
+        # Create a simple model
+        model = nn.Linear(64, 32)
+        exporter = ModelExporter(model=model)
+        
+        # Create temporary file for export
+        with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as f:
+            export_path = f.name
+        
+        try:
+            # Configure export with specific precision
+            config = ExportConfig(
+                format=ExportFormat.TORCHSCRIPT_TRACE,
+                output_path=export_path,
+                precision=precision,
+                input_shape=(1, 64)
+            )
+            
+            # Perform export
+            result = exporter.export(config)
+            
+            # Verify export succeeded for this precision
+            assert result.success is True, f"Export failed for precision {precision}"
+            
+        finally:
+            # Clean up temporary file
+            if os.path.exists(export_path):
+                os.unlink(export_path)
+
+
+# Test export directory creation
+def test_export_directory_creation() -> None:
+    # Create model and exporter
+    model = nn.Linear(10, 5)
+    exporter = ModelExporter(model=model)
+    
+    # Use temporary directory as base
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Create nested directory path that doesn't exist
+        nested_dir = os.path.join(temp_dir, "models", "exports")
+        export_path = os.path.join(nested_dir, "model.pt")
+        
+        # Configure export to non-existent directory
+        config = ExportConfig(
+            format=ExportFormat.TORCHSCRIPT_TRACE,
+            output_path=export_path,
+            input_shape=(1, 10)
+        )
+        
+        # Perform export
+        result = exporter.export(config)
+        
+        # Verify export succeeded and directory was created
+        assert result.success is True
+        assert os.path.exists(export_path)
+        assert os.path.exists(nested_dir)
+
+
+# Test export with metadata
+def test_export_with_metadata() -> None:
+    # Create model and exporter
+    model = nn.Linear(10, 5)
+    exporter = ModelExporter(model=model)
+    
+    # Create temporary file for export
+    with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as f:
+        export_path = f.name
+    
+    try:
+        # Configure export with metadata
+        metadata = {
+            "model_name": "test_linear_model",
+            "version": "1.0",
+            "author": "test_suite"
+        }
+        
+        config = ExportConfig(
+            format=ExportFormat.TORCHSCRIPT_TRACE,
+            output_path=export_path,
+            input_shape=(1, 10),
+            metadata=metadata
+        )
+        
+        # Perform export
+        result = exporter.export(config)
+        
+        # Verify export succeeded
+        assert result.success is True
+        assert result.export_path == export_path
+        
+    finally:
+        # Clean up temporary file
+        if os.path.exists(export_path):
+            os.unlink(export_path)
+
+
+# Test export consistency - same model should produce similar results
+def test_export_consistency() -> None:
+    # Set random seed for reproducibility
+    torch.manual_seed(42)
+    
+    # Create model and exporter
+    model = nn.Linear(10, 5)
+    exporter = ModelExporter(model=model)
+    
+    export_paths = []
+    results = []
+    
+    # Perform multiple exports of same model
+    for i in range(3):
+        with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as f:
+            export_path = f.name
+            export_paths.append(export_path)
+        
+        config = ExportConfig(
+            format=ExportFormat.TORCHSCRIPT_TRACE,
+            output_path=export_path,
+            input_shape=(1, 10)
+        )
+        
+        result = exporter.export(config)
+        results.append(result)
+    
+    try:
+        # Verify all exports succeeded
+        for i, result in enumerate(results):
+            assert result.success is True, f"Export {i} failed"
+            assert os.path.exists(result.export_path), f"Export {i} file not found"
+        
+        # Verify model sizes are similar (within reasonable tolerance)
+        sizes = [result.model_size_mb for result in results if result.model_size_mb]
+        if len(sizes) > 1:
+            avg_size = sum(sizes) / len(sizes)
+            for size in sizes:
+                # Allow 5% variation in file size
+                assert abs(size - avg_size) / avg_size < 0.05, "Export sizes vary too much"
+        
+    finally:
+        # Clean up temporary files
+        for export_path in export_paths:
+            if os.path.exists(export_path):
+                os.unlink(export_path)
+
+
+# Test error handling for invalid output path
+def test_export_invalid_output_path() -> None:
+    # Create model and exporter
+    model = nn.Linear(10, 5)
+    exporter = ModelExporter(model=model)
+    
+    # Configure export with invalid output path (read-only directory)
+    invalid_path = "/proc/invalid_export.pt"  # Should fail on most systems
+    
+    config = ExportConfig(
+        format=ExportFormat.TORCHSCRIPT_TRACE,
+        output_path=invalid_path,
+        input_shape=(1, 10)
+    )
+    
+    # Perform export and expect it to handle the error gracefully
+    result = exporter.export(config)
+    
+    # Verify export failed with error message
+    assert result.success is False
+    assert result.error_message is not None
+
+
+# Test ModelExporter with complex model architecture
+def test_model_exporter_complex_model() -> None:
+    # Create a more complex model architecture
+    class ComplexModel(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.conv1 = nn.Conv2d(3, 64, 3, padding=1)
+            self.bn1 = nn.BatchNorm2d(64)
+            self.relu1 = nn.ReLU(inplace=True)
+            self.conv2 = nn.Conv2d(64, 128, 3, padding=1)
+            self.bn2 = nn.BatchNorm2d(128)
+            self.relu2 = nn.ReLU(inplace=True)
+            self.pool = nn.AdaptiveAvgPool2d((1, 1))
+            self.fc = nn.Linear(128, 10)
+        
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            x = self.relu1(self.bn1(self.conv1(x)))
+            x = self.relu2(self.bn2(self.conv2(x)))
+            x = self.pool(x)
+            x = torch.flatten(x, 1)
+            x = self.fc(x)
+            return x
+    
+    # Create complex model and exporter
+    model = ComplexModel()
+    exporter = ModelExporter(model=model)
+    
+    # Create temporary file for export
+    with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as f:
+        export_path = f.name
+    
+    try:
+        # Configure export
+        config = ExportConfig(
+            format=ExportFormat.TORCHSCRIPT_TRACE,
+            output_path=export_path,
+            input_shape=(1, 3, 224, 224),
+            optimization_level=OptimizationLevel.BASIC
+        )
+        
+        # Perform export
+        result = exporter.export(config)
+        
+        # Verify export succeeded
+        assert result.success is True
+        assert result.export_path == export_path
+        assert os.path.exists(export_path)
+        assert result.optimization_applied is True
+        
+        # Verify model file is reasonable size (not empty)
+        file_size = os.path.getsize(export_path)
+        assert file_size > 1000  # At least 1KB
+        
+    finally:
+        # Clean up temporary file
+        if os.path.exists(export_path):
+            os.unlink(export_path)
+
+
+# Test integration with factory module (if available)
+def test_model_exporter_factory_integration() -> None:
+    # Mock the create_model function for testing
+    with patch('export.create_model') as mock_create_model:
+        # Create a mock model to return
+        mock_model = nn.Sequential(
             nn.Conv2d(3, 64, 3),
-            nn.BatchNorm2d(64),
-            nn.ReLU()
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(64, 10)
         )
-        # Apply optimization
-        optimized = optimizer.optimize_model(model)
-        # The optimized model should not be None
-        assert optimized is not None
-
-    # Test advanced level optimization on a linear model
-    def test_advanced_optimization(self):
-        config = ExportConfig(
-            export_format=ExportFormat.ONNX,
-            optimization_level=OptimizationLevel.ADVANCED
-        )
-        optimizer = ModelOptimizer(config)
-        model = nn.Linear(10, 5)
-        # Apply advanced optimization
-        optimized = optimizer.optimize_model(model)
-        # The optimized model should not be None
-        assert optimized is not None
-
-    # Test validation method for optimized models
-    def test_validate_optimized_model(self):
-        config = ExportConfig(
-            export_format=ExportFormat.ONNX,
-            input_shape=(1, 10, 10, 10)
-        )
-        optimizer = ModelOptimizer(config)
-        model = nn.Linear(10, 5)
-        # Create a separate optimized model and load weights from original model
-        optimized_model = nn.Linear(10, 5)
-        optimized_model.load_state_dict(model.state_dict())
+        mock_create_model.return_value = mock_model
         
-        # Validate if optimized model is equivalent to original
-        is_valid = optimizer.validate_optimized_model(model, optimized_model)
-        # Expect validation to return True
-        assert is_valid is True
-
-
-class TestQuantizationHandler:
-    # Test dynamic quantization preparation returns the original model
-    def test_dynamic_quantization(self):
-        handler = QuantizationHandler(QuantizationType.DYNAMIC)
-        model = nn.Linear(10, 5)
-        prepared = handler.prepare_model_for_quantization(model)
-        assert prepared is model
-
-    # Test static quantization preparation adds qconfig attribute to the model
-    def test_static_quantization_preparation(self):
-        handler = QuantizationHandler(QuantizationType.STATIC)
-        model = nn.Linear(10, 5)
-        prepared = handler.prepare_model_for_quantization(model)
-        assert hasattr(prepared, 'qconfig')
-
-    # Test quantization aware training preparation adds qconfig attribute to the model
-    def test_qat_preparation(self):
-        handler = QuantizationHandler(QuantizationType.QAT)
-        model = nn.Linear(10, 5)
-        prepared = handler.prepare_model_for_quantization(model)
-        assert hasattr(prepared, 'qconfig')
-
-    # Test conversion of model to quantized version returns a non-None object
-    def test_convert_to_quantized(self):
-        handler = QuantizationHandler(QuantizationType.DYNAMIC)
-        model = nn.Linear(10, 5)
-        quantized = handler.convert_to_quantized(model)
-        assert quantized is not None
-
-class TestONNXExporter:
-    # Test ONNX export creates a file at the specified path
-    def test_onnx_export(self):
-        config = ExportConfig(
-            export_format=ExportFormat.ONNX,
-            input_shape=(1, 3, 224, 224)
-        )
-        exporter = ONNXExporter(config)
-        model = nn.Conv2d(3, 64, 3)
+        # Initialize exporter with model name (should use factory)
+        exporter = ModelExporter(model_name="test_model", config={"pretrained": False})
         
-        # Create a temporary file path for the exported ONNX model
-        with tempfile.NamedTemporaryFile(suffix='.onnx', delete=False) as f:
-            export_path = f.name
-            
-        try:
-            # Export the model and check if the file exists
-            exporter.export(model, export_path)
-            assert os.path.exists(export_path)
-        finally:
-            # Clean up the temporary file if it still exists
-            if os.path.exists(export_path):
-                os.unlink(export_path)
-
-    # Test running inference on the exported ONNX model produces output with expected batch size
-    def test_onnx_inference(self):
-        config = ExportConfig(
-            export_format=ExportFormat.ONNX,
-            input_shape=(1, 3, 224, 224)
-        )
-        exporter = ONNXExporter(config)
-        model = nn.Conv2d(3, 64, 3)
+        # Verify create_model was called with correct parameters
+        mock_create_model.assert_called_once_with("test_model", {"pretrained": False})
         
-        # Create a temporary file path for the exported ONNX model
-        with tempfile.NamedTemporaryFile(suffix='.onnx', delete=False) as f:
-            export_path = f.name
-            
-        try:
-            # Export the model to ONNX
-            exporter.export(model, export_path)
-            # Prepare dummy input for inference
-            dummy_input = torch.randn(1, 3, 224, 224)
-            # Run ONNX inference and check output validity
-            output = exporter.test_onnx_inference(export_path, dummy_input)
-            assert output is not None
-            assert output.shape[0] == 1
-        finally:
-            # Clean up the temporary ONNX file
-            if os.path.exists(export_path):
-                os.unlink(export_path)
-
-class TestTorchScriptExporter:
-    # Test export of model using TorchScript tracing creates a file
-    def test_torchscript_trace_export(self):
-        config = ExportConfig(
-            export_format=ExportFormat.TORCHSCRIPT_TRACE,
-            input_shape=(1, 3, 224, 224)
-        )
-        exporter = TorchScriptExporter(config)
-        model = nn.Conv2d(3, 64, 3)
-        
-        # Temporary file for the TorchScript traced model
+        # Create temporary file for export
         with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as f:
             export_path = f.name
-            
+        
         try:
-            # Export the model and verify file creation
-            exporter.export(model, export_path)
-            assert os.path.exists(export_path)
-        finally:
-            # Remove temporary file
-            if os.path.exists(export_path):
-                os.unlink(export_path)
-
-    # Test export of model using TorchScript scripting creates a file
-    def test_torchscript_script_export(self):
-        config = ExportConfig(
-            export_format=ExportFormat.TORCHSCRIPT_SCRIPT,
-            input_shape=(1, 3, 224, 224)
-        )
-        exporter = TorchScriptExporter(config)
-        model = nn.Conv2d(3, 64, 3)
-        
-        # Temporary file for the TorchScript scripted model
-        with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as f:
-            export_path = f.name
-            
-        try:
-            # Export the scripted model and verify file creation
-            exporter.export(model, export_path)
-            assert os.path.exists(export_path)
-        finally:
-            # Remove temporary file
-            if os.path.exists(export_path):
-                os.unlink(export_path)
-
-    # Test inference using TorchScript model produces output with expected batch size
-    def test_torchscript_inference(self):
-        config = ExportConfig(
-            export_format=ExportFormat.TORCHSCRIPT_TRACE,
-            input_shape=(1, 3, 224, 224)
-        )
-        exporter = TorchScriptExporter(config)
-        model = nn.Conv2d(3, 64, 3)
-        
-        # Temporary file for the TorchScript model
-        with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as f:
-            export_path = f.name
-            
-        try:
-            # Export the model
-            exporter.export(model, export_path)
-            # Prepare dummy input tensor
-            dummy_input = torch.randn(1, 3, 224, 224)
-            # Run inference and check the output tensor
-            output = exporter.test_torchscript_inference(export_path, dummy_input)
-            assert output is not None
-            assert output.shape[0] == 1
-        finally:
-            # Clean up the temporary file
-            if os.path.exists(export_path):
-                os.unlink(export_path)
-
-
-class TestDeploymentTester:
-    def test_model_accuracy_test(self):
-        # Create DeploymentTester instance with empty config
-        tester = DeploymentTester({})
-        # Create two linear models with same dimensions
-        model1 = nn.Linear(10, 5)
-        model2 = nn.Linear(10, 5)
-        # Copy state dict from model1 to model2 to make them identical
-        model2.load_state_dict(model1.state_dict())
-        
-        # Generate dummy input tensor
-        dummy_input = torch.randn(1, 10)
-        # Test accuracy between the two models using dummy input
-        accuracy = tester.test_model_accuracy(model1, model2, dummy_input)
-        # Assert that accuracy test returns True (models match)
-        assert accuracy is True
-
-    def test_model_performance_test(self):
-        # Create DeploymentTester instance
-        tester = DeploymentTester({})
-        # Create a linear model
-        model = nn.Linear(10, 5)
-        # Generate dummy input tensor
-        dummy_input = torch.randn(1, 10)
-        
-        # Test model performance on dummy input for 10 runs
-        performance = tester.test_model_performance(model, dummy_input, num_runs=10)
-        # Assert performance metric is positive
-        assert performance > 0
-
-    def test_memory_usage_test(self):
-        # Create DeploymentTester instance
-        tester = DeploymentTester({})
-        # Create a linear model
-        model = nn.Linear(10, 5)
-        # Generate dummy input tensor
-        dummy_input = torch.randn(1, 10)
-        
-        # Test model memory usage with dummy input
-        memory = tester.test_memory_usage(model, dummy_input)
-        # Assert memory usage is non-negative
-        assert memory >= 0
-
-    def test_generate_report(self):
-        # Create DeploymentTester instance
-        tester = DeploymentTester({})
-        # Example results dictionary with metrics
-        results = {'accuracy': True, 'performance': 0.001, 'memory': 50.0}
-        
-        # Generate textual report from results
-        report = tester.generate_test_report(results)
-        # Check that report contains each metric's string representation
-        assert "accuracy: True" in report
-        assert "performance: 0.001" in report
-        assert "memory: 50.0" in report
-
-class TestExportManager:
-    def test_export_manager_initialization(self):
-        # Create export configuration with ONNX format
-        config = ExportConfig(export_format=ExportFormat.ONNX)
-        # Initialize ExportManager with config
-        manager = ExportManager(config)
-        # Assert manager's config matches input config
-        assert manager.config == config
-        # Assert optimizer is initialized
-        assert manager.optimizer is not None
-        # Assert quantization handler is initialized
-        assert manager.quantization_handler is not None
-        # Assert tester instance is initialized
-        assert manager.tester is not None
-
-    def test_validate_export_config(self):
-        # Create export config with ONNX format
-        config = ExportConfig(export_format=ExportFormat.ONNX)
-        # Initialize ExportManager
-        manager = ExportManager(config)
-        # Validate config does not raise exceptions
-        manager.validate_export_config(config)
-
-    def test_validate_invalid_config(self):
-        # Create export config with ONNX format
-        config = ExportConfig(export_format=ExportFormat.ONNX)
-        # Set invalid input shape (4D shape likely invalid for validation)
-        config.input_shape = (1, 10, 10, 10)
-        # Initialize ExportManager
-        manager = ExportManager(config)
-        
-        # Expect ValueError raised during validation due to invalid config
-        with pytest.raises(ValueError):
-            manager.validate_export_config(config)
-
-    def test_prepare_model_for_export(self):
-        # Create export config with ONNX format
-        config = ExportConfig(export_format=ExportFormat.ONNX)
-        # Initialize ExportManager
-        manager = ExportManager(config)
-        # Create a linear model
-        model = nn.Linear(10, 5)
-        
-        # Prepare model for export (e.g., convert or optimize)
-        prepared = manager.prepare_model_for_export(model)
-        # Assert preparation returns a non-None object
-        assert prepared is not None
-
-    def test_export_model_onnx(self):
-        # Use temporary directory to save export
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Create export config for ONNX with output dir and input shape
+            # Configure and perform export
             config = ExportConfig(
-                export_format=ExportFormat.ONNX,
-                output_dir=temp_dir,
+                format=ExportFormat.TORCHSCRIPT_TRACE,
+                output_path=export_path,
                 input_shape=(1, 3, 224, 224)
             )
-            # Initialize ExportManager
-            manager = ExportManager(config)
-            # Create a Conv2d model
-            model = nn.Conv2d(3, 64, 3)
             
-            # Export model to ONNX format
-            export_path = manager.export_model(model)
-            # Assert the export path exists in filesystem
+            result = exporter.export(config)
+            
+            # Verify export succeeded
+            assert result.success is True
             assert os.path.exists(export_path)
-            # Assert the file extension is .onnx
-            assert export_path.endswith('.onnx')
-
-    def test_export_model_torchscript(self):
-        # Use temporary directory for saving export
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Create export config for TorchScript tracing with output dir and input shape
-            config = ExportConfig(
-                export_format=ExportFormat.TORCHSCRIPT_TRACE,
-                output_dir=temp_dir,
-                input_shape=(1, 3, 224, 224)
-            )
-            # Initialize ExportManager
-            manager = ExportManager(config)
-            # Create a Conv2d model
-            model = nn.Conv2d(3, 64, 3)
             
-            # Export model to TorchScript format
-            export_path = manager.export_model(model)
-            # Assert export file exists
-            assert os.path.exists(export_path)
-            # Assert file has .pt extension
-            assert export_path.endswith('.pt')
-
-    def test_batch_export(self):
-        # Use temporary directory for saving exports
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Create export config for ONNX with output dir and input shape
-            config = ExportConfig(
-                export_format=ExportFormat.ONNX,
-                output_dir=temp_dir,
-                input_shape=(1, 3, 224, 224)
-            )
-            # Initialize ExportManager
-            manager = ExportManager(config)
-            # Create a Conv2d model
-            model = nn.Conv2d(3, 64, 3)
-            
-            # List of export formats to batch export
-            formats = [ExportFormat.ONNX, ExportFormat.TORCHSCRIPT_TRACE]
-            # Perform batch export returning results dict
-            results = manager.batch_export(model, formats)
-            
-            # Assert results contain two entries (one per format)
-            assert len(results) == 2
-            # Assert ONNX export key is in results
-            assert ExportFormat.ONNX.value in results
-            # Assert TorchScript export key is in results
-            assert ExportFormat.TORCHSCRIPT_TRACE.value in results
-
-    def test_unsupported_export_format(self):
-        # Create export config with unsupported format TensorRT
-        config = ExportConfig(export_format=ExportFormat.TENSORRT)
-        # Initialize ExportManager
-        manager = ExportManager(config)
-        # Create a linear model
-        model = nn.Linear(10, 5)
-        
-        # Expect NotImplementedError when exporting with unsupported format
-        with pytest.raises(NotImplementedError):
-            manager.export_model(model)
-
-
-class TestUtilityFunctions:
-    def test_export_onnx_function(self):
-        model = nn.Linear(10, 5)
-        
-        # Create a temporary file with .onnx suffix, not deleted automatically
-        with tempfile.NamedTemporaryFile(suffix='.onnx', delete=False) as f:
-            export_path = f.name
-            
-        try:
-            # Export the model to ONNX format and check result path matches export path
-            result_path = export_onnx(model, export_path, input_shape=(1, 10))
-            assert result_path == export_path
-            # Verify the exported file exists
-            assert os.path.exists(export_path)
         finally:
-            # Clean up the temporary file if it still exists
+            # Clean up temporary file
             if os.path.exists(export_path):
                 os.unlink(export_path)
-
-    def test_export_torchscript_function(self):
-        model = nn.Linear(10, 5)
-        
-        # Create a temporary file with .pt suffix, not deleted automatically
-        with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as f:
-            export_path = f.name
-            
-        try:
-            # Export the model to TorchScript format and check result path
-            result_path = export_torchscript(model, export_path, input_shape=(1, 10))
-            assert result_path == export_path
-            # Verify the exported file exists
-            assert os.path.exists(export_path)
-        finally:
-            # Clean up the temporary file if it still exists
-            if os.path.exists(export_path):
-                os.unlink(export_path)
-
-    def test_print_deployment_plan(self):
-        model = nn.Linear(10, 5)
-        
-        # Patch built-in print function to monitor its calls
-        with patch('builtins.print') as mock_print:
-            # Call the deployment plan print function for "edge" deployment
-            print_deployment_plan(model, "edge")
-            # Assert that print was called at least once
-            mock_print.assert_called()
-
-class TestEdgeIntegration:
-    def test_edepth_model_export(self):
-        # Use a temporary directory to store export output
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Setup export configuration for ONNX with specified input shape
-            config = ExportConfig(
-                export_format=ExportFormat.ONNX,
-                output_dir=temp_dir,
-                input_shape=(1, 3, 224, 224)
-            )
-            manager = ExportManager(config)
-            
-            # Initialize the edepth model with specified backbone, no pretrained weights
-            model = edepth(
-                backbone_name='vit_base_patch16_224',
-                pretrained=False
-            )
-            
-            # Export the model and get the path
-            export_path = manager.export_model(model)
-            # Verify the exported file exists
-            assert os.path.exists(export_path)
-
-    def test_edepth_model_testing(self):
-        # Use a temporary directory to store export output
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Setup export configuration for TorchScript tracing
-            config = ExportConfig(
-                export_format=ExportFormat.TORCHSCRIPT_TRACE,
-                output_dir=temp_dir,
-                input_shape=(1, 3, 224, 224)
-            )
-            manager = ExportManager(config)
-            
-            # Initialize the edepth model
-            model = edepth(
-                backbone_name='vit_base_patch16_224',
-                pretrained=False
-            )
-            
-            # Export the model
-            export_path = manager.export_model(model)
-            # Test the exported model and capture results
-            test_results = manager.test_exported_model(model, export_path)
-            
-            # Check that the test passed and relevant keys are present in results
-            assert test_results['test_passed'] is True
-            assert 'accuracy_test' in test_results
-            assert 'avg_inference_time' in test_results
-            assert 'memory_usage_mb' in test_results
-
-class TestErrorHandling:
-    def test_invalid_model_type(self):
-        # Setup exporter with ONNX config
-        config = ExportConfig(export_format=ExportFormat.ONNX)
-        exporter = ONNXExporter(config)
-        
-        # Validate model with invalid input type, expecting ValueError
-        with pytest.raises(ValueError):
-            exporter.validate_model("not a model") #type: ignore 
-
-    def test_missing_export_file(self):
-        # Setup exporter with ONNX config
-        config = ExportConfig(export_format=ExportFormat.ONNX)
-        exporter = ONNXExporter(config)
-        
-        # Validate a non-existent ONNX file, expecting an Exception
-        with pytest.raises(Exception):
-            exporter.validate_onnx_model("nonexistent.onnx")
-
-    def test_export_error_handling(self):
-        # Setup export manager with ONNX config
-        config = ExportConfig(export_format=ExportFormat.ONNX)
-        manager = ExportManager(config)
-        
-        # Create a mock model that raises exception on eval()
-        invalid_model = MagicMock()
-        invalid_model.eval = MagicMock(side_effect=Exception("Model error"))
-        
-        # Attempt to export invalid model, expecting an Exception
-        with pytest.raises(Exception):
-            manager.export_model(invalid_model)
-
-class TestPerformanceOptimization:
-    def test_optimization_validation(self):
-        # Setup optimizer config with BASIC optimization level for ONNX export
-        config = ExportConfig(
-            export_format=ExportFormat.ONNX,
-            optimization_level=OptimizationLevel.BASIC
-        )
-        optimizer = ModelOptimizer(config)
-        
-        # Create original and optimized models
-        original_model = nn.Linear(10, 5)
-        optimized_model = optimizer.optimize_model(original_model)
-        
-        # Validate optimized model against original model
-        is_valid = optimizer.validate_optimized_model(original_model, optimized_model)
-        assert is_valid is True
-
-    def test_quantization_validation(self):
-        # Create quantization handler with dynamic quantization type
-        handler = QuantizationHandler(QuantizationType.DYNAMIC)
-        
-        # Create original model and quantized version
-        original_model = nn.Linear(10, 5)
-        quantized_model = handler.convert_to_quantized(original_model)
-        
-        # Validate quantized model
-        is_valid = handler.validate_quantized_model(original_model, quantized_model)
-        # Check that validation result is boolean
-        assert isinstance(is_valid, bool)
-
-class TestCompatibility:
-    def test_different_input_shapes(self):
-        # Test various input shapes for dummy input creation
-        shapes = [(1, 3, 224, 224), (1, 3, 256, 256), (2, 3, 224, 224)]
-        
-        for shape in shapes:
-            # Setup exporter config for each input shape
-            config = ExportConfig(
-                export_format=ExportFormat.ONNX,
-                input_shape=shape
-            )
-            exporter = ONNXExporter(config)
-            # Create dummy input tensor and verify shape matches
-            dummy_input = exporter.create_dummy_input(shape)
-            assert dummy_input.shape == shape
-
-    def test_different_batch_sizes(self):
-        # Test multiple batch sizes for dummy input creation
-        batch_sizes = [1, 2, 4, 8]
-        
-        for batch_size in batch_sizes:
-            # Setup exporter config for each batch size
-            config = ExportConfig(
-                export_format=ExportFormat.ONNX,
-                batch_size=batch_size,
-                input_shape=(batch_size, 3, 224, 224)
-            )
-            exporter = ONNXExporter(config)
-            # Create dummy input with specified batch size and verify batch dimension
-            dummy_input = exporter.create_dummy_input((1, 3, 224, 224), batch_size)
-            assert dummy_input.shape[0] == batch_size
-
-class TestRegressionPrevention:
-    def test_consistent_export_results(self):
-        model = nn.Linear(10, 5)
-        
-        # Use temporary directory for exports
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Setup export config for ONNX with 4D input shape
-            config = ExportConfig(
-                export_format=ExportFormat.ONNX,
-                output_dir=temp_dir,
-                input_shape=(1, 10, 10, 10)
-            )
-            manager = ExportManager(config)
-            
-            # Export the model twice and get paths
-            path1 = manager.export_model(model)
-            path2 = manager.export_model(model)
-            
-            # Verify both export files exist
-            assert os.path.exists(path1)
-            assert os.path.exists(path2)
-
-    def test_export_determinism(self):
-        model = nn.Linear(10, 5)
-        # Fix random seed for reproducibility
-        torch.manual_seed(42)
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Setup export config for TorchScript tracing
-            config = ExportConfig(
-                export_format=ExportFormat.TORCHSCRIPT_TRACE,
-                output_dir=temp_dir,
-                input_shape=(1, 10, 10, 10 )
-            )
-            manager = ExportManager(config)
-            
-            # Export the model and load it back
-            export_path = manager.export_model(model)
-            loaded_model = torch.jit.load(export_path) #type: ignore 
-            
-            # Create random dummy input
-            dummy_input = torch.randn(1, 10)
-            with torch.no_grad():
-                # Run inference twice and compare outputs for determinism
-                output1 = loaded_model(dummy_input)
-                output2 = loaded_model(dummy_input)
-            
-            assert torch.allclose(output1, output2)
