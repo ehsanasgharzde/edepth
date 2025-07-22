@@ -1,504 +1,450 @@
 # FILE: tests/test_model.py
 # ehsanasgharzde - COMPLETE MODEL TEST SUITE
 # hosseinsolymanzadeh - PROPER COMMENTING
+# hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
-import torch
-import torch.nn as nn
-import logging
 import time
-from typing import Dict, Any, List, Tuple, Optional, Union
-from models.edepth import edepth
-from models.factory import create_model, get_model_info, create_model_from_checkpoint
-from metrics.metrics import Metrics
-from losses.factory import create_loss
+import torch
+import pytest
+import logging
+import torch.nn as nn
+from typing import Dict, Any, List, Tuple
+
+# Updated imports based on new module structure
+from ..models.edepth import edepth
+from ..models.factory import (
+    create_model, get_available_models, ModelBuilder,
+    get_model_info_summary, estimate_model_parameters, validate_model_config,
+)
+
+# Import centralized utilities
+from ..utils.model_utils import (
+    get_model_info, ModelInfo, interpolate_features
+)
+from ..utils.model_validation import (
+    validate_tensor_input, TensorValidationError, ConfigValidationError
+)
+from ..configs.model_config import (
+    get_model_config, get_backbone_config, list_available_models,
+    list_available_backbones
+)
 
 logger = logging.getLogger(__name__)
 
-def analyze_model_complexity(model: nn.Module, input_size: tuple = (1, 3, 224, 224)) -> Dict[str, Any]:
-    device = next(model.parameters()).device  # Get the device (CPU/GPU) on which the model is located
-    model.eval()  # Set model to evaluation mode
-
-    with torch.no_grad():  # Disable gradient calculation for efficiency
-        dummy_input = torch.randn(*input_size).to(device)  # Create a dummy input tensor with given shape
-
-        complexity_info = {}  # Dictionary to store complexity-related information
-
-        # Count total number of parameters
-        total_params = sum(p.numel() for p in model.parameters())
-        # Count only trainable parameters (those requiring gradients)
-        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-        # Store parameter statistics in the dictionary
-        complexity_info['total_parameters'] = total_params
-        complexity_info['trainable_parameters'] = trainable_params
-        complexity_info['non_trainable_parameters'] = total_params - trainable_params
-
-        # Estimate memory used by parameters (in megabytes, assuming float32 = 4 bytes)
-        param_memory_mb = total_params * 4 / (1024 ** 2)
-        complexity_info['parameter_memory_mb'] = param_memory_mb
-
-        # Attempt to get detailed model summary if supported
-        try:
-            model_info = model.get_model_summary(input_size)  # type: ignore
-            complexity_info['model_summary'] = model_info
-        except Exception as e:
-            logger.warning(f"Could not get detailed model summary: {e}")
-
-        # Attempt to get intermediate feature map shapes if supported
-        try:
-            feature_shapes = model.get_feature_shapes(input_size)  # type: ignore
-            complexity_info['feature_shapes'] = feature_shapes
-        except Exception as e:
-            logger.warning(f"Could not get feature shapes: {e}")
-
-        activation_memory = 0  # Initialize estimated activation memory usage
-
-        # Loop over all modules without children (leaf modules)
-        for name, module in model.named_modules():
-            if len(list(module.children())) == 0:
-                try:
-                    output = module(dummy_input)  # Forward dummy input through module
-                    if isinstance(output, torch.Tensor):
-                        # Estimate memory used by activations (in bytes)
-                        activation_memory += output.numel() * 4
-                except:
-                    pass  # Silently ignore modules that can't process the dummy input
-
-        # Convert activation memory to megabytes and store it
-        complexity_info['estimated_activation_memory_mb'] = activation_memory / (1024 ** 2)
-
-        # Log completion of complexity analysis
-        logger.info(f"Model complexity analysis completed for {model.__class__.__name__}")
-
-    return complexity_info  # Return the collected complexity information
-
-def compare_models(model_names: List[str], input_size: tuple = (1, 3, 224, 224)) -> Dict[str, Any]:
-    # Dictionary to store detailed results for each model
-    comparison_results = {}
+def test_model_creation_basic() -> None:
+    # Test basic model creation with default parameters
+    model: nn.Module = create_model('vit_base_patch16_224')
+    assert isinstance(model, edepth), f"Expected edepth model, got {type(model)}"
     
-    for model_name in model_names:
-        try:
-            # Retrieve general info about the model
-            model_info = get_model_info(model_name)
-            
-            # Create model instance
-            model = create_model(model_name)
-            
-            # Analyze model complexity (e.g., params, memory)
-            complexity_info = analyze_model_complexity(model, input_size)
-            
-            # Store successful result with metadata
-            comparison_results[model_name] = {
-                'model_info': model_info,
-                'complexity': complexity_info,
-                'creation_status': 'success'
-            }
-            
-            # Log success
-            logger.info(f"Successfully analyzed model: {model_name}")
-            
-        except Exception as e:
-            # In case of any failure, record the error details
-            comparison_results[model_name] = {
-                'model_info': None,
-                'complexity': None,
-                'creation_status': 'failed',
-                'error': str(e)
-            }
-            # Log the error
-            logger.error(f"Failed to analyze model {model_name}: {e}")
-    
-    # Prepare a concise comparison table across models
-    comparison_table = {}
-    for model_name, results in comparison_results.items():
-        if results['creation_status'] == 'success':
-            # Extract complexity and model info for successful cases
-            complexity = results['complexity']
-            model_info = results['model_info']
-            
-            # Store summary metrics for comparison
-            comparison_table[model_name] = {
-                'params': complexity['total_parameters'],
-                'trainable_params': complexity['trainable_parameters'],
-                'memory_mb': complexity['parameter_memory_mb'],
-                'patch_size': model_info.get('patch_size', 'N/A'),
-                'embed_dim': model_info.get('embed_dim', 'N/A'),
-                'estimated_params': model_info.get('estimated_params', 'N/A')
-            }
-        else:
-            # If model creation failed, mark all fields as error
-            comparison_table[model_name] = {
-                'params': 'Error',
-                'trainable_params': 'Error',
-                'memory_mb': 'Error',
-                'patch_size': 'Error',
-                'embed_dim': 'Error',
-                'estimated_params': 'Error'
-            }
-    
-    # Log completion of the comparison process
-    logger.info(f"Model comparison completed for {len(model_names)} models")
-    
-    # Return both detailed and summarized comparison results
-    return {
-        'detailed_results': comparison_results,
-        'comparison_table': comparison_table
-    }
+    # Verify model has required attributes
+    assert hasattr(model, 'backbone'), "Model missing backbone attribute"
+    assert hasattr(model, 'decoder'), "Model missing decoder attribute"
+    assert hasattr(model, 'forward'), "Model missing forward method"
 
-def benchmark_model(model: nn.Module, input_size: tuple = (1, 3, 224, 224), num_runs: int = 100) -> Dict[str, Any]:
-    # Get the device of the model's parameters
-    device = next(model.parameters()).device
-    model.eval()  # Set model to evaluation mode
-    
-    # Create a dummy input tensor with specified size
-    dummy_input = torch.randn(*input_size).to(device)
-    
-    forward_times = []  # List to store forward pass durations
-    backward_times = []  # List to store backward pass durations
-    memory_usage = []  # List to store memory usage (for CUDA)
-    
-    for i in range(num_runs):
-        # Clear CUDA cache if available
-        torch.cuda.empty_cache() if torch.cuda.is_available() else None
-        
-        # Measure forward pass time
-        start_time = time.perf_counter()
-        with torch.no_grad():
-            output = model(dummy_input)
-        forward_time = time.perf_counter() - start_time
-        forward_times.append(forward_time)
-        
-        # Record memory usage if on CUDA
-        if torch.cuda.is_available():
-            memory_usage.append(torch.cuda.max_memory_allocated() / 1024 / 1024)  # Convert to MB
-        
-        # Clone input with gradients enabled for backward pass
-        dummy_input_grad = dummy_input.clone().requires_grad_(True)
-        
-        # Measure backward pass time
-        start_time = time.perf_counter()
-        output = model(dummy_input_grad)
-        loss = output.sum()  # Dummy loss
-        loss.backward()
-        backward_time = time.perf_counter() - start_time
-        backward_times.append(backward_time)
-        
-        # Log progress every 10 runs
-        if i % 10 == 0:
-            logger.debug(f"Benchmark progress: {i+1}/{num_runs}")
-    
-    # Convert timing lists to tensors for easier stats
-    forward_times = torch.tensor(forward_times)
-    backward_times = torch.tensor(backward_times)
-    
-    # Compile benchmark results with various statistics
-    benchmark_results = {
-        'forward_pass': {
-            'mean_time_ms': float(forward_times.mean() * 1000),
-            'std_time_ms': float(forward_times.std() * 1000),
-            'min_time_ms': float(forward_times.min() * 1000),
-            'max_time_ms': float(forward_times.max() * 1000),
-            'throughput_fps': float(1.0 / forward_times.mean())
-        },
-        'backward_pass': {
-            'mean_time_ms': float(backward_times.mean() * 1000),
-            'std_time_ms': float(backward_times.std() * 1000),
-            'min_time_ms': float(backward_times.min() * 1000),
-            'max_time_ms': float(backward_times.max() * 1000)
-        },
-        'total_time': {
-            'mean_time_ms': float((forward_times + backward_times).mean() * 1000),
-            'throughput_fps': float(1.0 / (forward_times + backward_times).mean())
-        },
-        'memory_usage': {
-            'max_memory_mb': float(max(memory_usage)) if memory_usage else 0,
-            'avg_memory_mb': float(sum(memory_usage) / len(memory_usage)) if memory_usage else 0
-        },
-        'benchmark_config': {
-            'num_runs': num_runs,
-            'input_size': input_size,
-            'device': str(device)
-        }
+def test_model_creation_with_config() -> None:
+    # Test model creation with custom configuration
+    config: Dict[str, Any] = {
+        'backbone_name': 'vit_base_patch16_224',
+        'extract_layers': [6, 8, 10, 11],
+        'decoder_channels': [128, 256, 512, 768],
+        'use_attention': True,
+        'final_activation': 'sigmoid'
     }
     
-    # Log benchmark summary
-    logger.info(f"Benchmark completed: {benchmark_results['forward_pass']['throughput_fps']:.2f} FPS")
-    
-    return benchmark_results
+    model: nn.Module = create_model('vit_base_patch16_224', config)
+    assert isinstance(model, edepth), f"Expected edepth model, got {type(model)}"
 
-
-def test_model_forward_pass(model: nn.Module, input_size: tuple = (1, 3, 224, 224)) -> Dict[str, Any]:
-    # Get model device
-    device = next(model.parameters()).device
-    model.eval()  # Set model to evaluation mode
+def test_model_forward_pass_basic() -> None:
+    # Test basic forward pass functionality
+    model: nn.Module = create_model('vit_base_patch16_224')
+    model.eval()
     
-    test_results = {}  # Dictionary to store test results
+    input_tensor: torch.Tensor = torch.randn(2, 3, 224, 224)
     
     with torch.no_grad():
-        # Create dummy input
-        dummy_input = torch.randn(*input_size).to(device)
-        
-        try:
-            # Run forward pass
-            output = model(dummy_input)
-            
-            # Save output info
-            test_results['forward_pass'] = 'success'
-            test_results['output_shape'] = tuple(output.shape)
-            test_results['output_dtype'] = str(output.dtype)
-            test_results['output_device'] = str(output.device)
-            
-            # Collect statistics on the output tensor
-            test_results['output_stats'] = {
-                'mean': float(output.mean()),
-                'std': float(output.std()),
-                'min': float(output.min()),
-                'max': float(output.max()),
-                'has_nan': bool(torch.isnan(output).any()),
-                'has_inf': bool(torch.isinf(output).any())
-            }
-            
-            # Log success
-            logger.info(f"Forward pass test successful: {test_results['output_shape']}")
-        
-        except Exception as e:
-            # Catch and log errors in forward pass
-            test_results['forward_pass'] = 'failed'
-            test_results['error'] = str(e)
-            logger.error(f"Forward pass test failed: {e}")
-    return test_results
+        output: torch.Tensor = model(input_tensor)
+    
+    # Validate output shape and properties
+    expected_shape: Tuple[int, int, int, int] = (2, 1, 224, 224)
+    assert output.shape == expected_shape, f"Expected shape {expected_shape}, got {output.shape}"
+    assert not torch.isnan(output).any(), "Output contains NaN values"
+    assert not torch.isinf(output).any(), "Output contains infinite values"
 
-def test_model_metrics(model: nn.Module, input_size: tuple = (1, 3, 224, 224)) -> Dict[str, Any]:
-    # Get the device of the model parameters (CPU or GPU)
-    device = next(model.parameters()).device
-    model.eval()  # Set the model to evaluation mode
+def test_model_forward_pass_different_sizes() -> None:
+    # Test forward pass with different input sizes
+    model: nn.Module = create_model('vit_base_patch16_224')
+    model.eval()
     
-    metrics_handler = Metrics()  # Initialize the metrics handler
+    test_sizes: List[Tuple[int, int, int, int]] = [
+        (1, 3, 224, 224),
+        (4, 3, 224, 224),
+        (1, 3, 384, 384),
+        (2, 3, 512, 512)
+    ]
     
-    with torch.no_grad():  # Disable gradient computation for inference
-        dummy_input = torch.randn(*input_size).to(device)  # Create dummy input tensor
-        dummy_target = torch.rand(*input_size).to(device)  # Create dummy target tensor
+    for size in test_sizes:
+        input_tensor: torch.Tensor = torch.randn(*size)
         
+        with torch.no_grad():
+            output: torch.Tensor = model(input_tensor)
+        
+        expected_batch: int = size[0]
+        expected_height: int = size[2]
+        expected_width: int = size[3]
+        
+        assert output.shape[0] == expected_batch, f"Batch size mismatch: expected {expected_batch}, got {output.shape[0]}"
+        assert output.shape[1] == 1, f"Channel mismatch: expected 1, got {output.shape[1]}"
+
+def test_model_gradient_flow() -> None:
+    # Test gradient flow through the model
+    model: nn.Module = create_model('vit_base_patch16_224')
+    model.train()
+    
+    input_tensor: torch.Tensor = torch.randn(1, 3, 224, 224, requires_grad=True)
+    target: torch.Tensor = torch.rand(1, 1, 224, 224)
+    
+    # Forward pass
+    output: torch.Tensor = model(input_tensor)
+    loss: torch.Tensor = torch.nn.functional.mse_loss(output, target)
+    
+    # Backward pass
+    model.zero_grad()
+    loss.backward()
+    
+    # Check gradient presence
+    param_count: int = 0
+    grad_count: int = 0
+    
+    for param in model.parameters():
+        param_count += 1
+        if param.grad is not None:
+            grad_count += 1
+            assert not torch.isnan(param.grad).any(), "Gradient contains NaN values"
+    
+    gradient_coverage: float = grad_count / param_count if param_count > 0 else 0
+    assert gradient_coverage > 0.8, f"Low gradient coverage: {gradient_coverage:.2f}"
+
+def test_model_parameter_count() -> None:
+    # Test parameter counting functionality
+    model: nn.Module = create_model('vit_base_patch16_224')
+    
+    model_info: ModelInfo = get_model_info(model)
+    total_params: int = model_info.total_parameters
+    trainable_params: int = model_info.trainable_parameters
+    
+    assert total_params > 0, "Total parameters should be greater than 0"
+    assert trainable_params > 0, "Trainable parameters should be greater than 0"
+    assert trainable_params <= total_params, "Trainable parameters cannot exceed total parameters"
+
+def test_backbone_functionality() -> None:
+    # Test backbone-specific functionality
+    model: edepth = edepth('vit_base_patch16_224')
+    
+    # Test backbone freeze/unfreeze
+    model.freeze_backbone()
+    frozen_params: int = sum(1 for p in model.backbone.parameters() if not p.requires_grad)
+    total_backbone_params: int = sum(1 for _ in model.backbone.parameters())
+    
+    assert frozen_params == total_backbone_params, "Not all backbone parameters were frozen"
+    
+    model.unfreeze_backbone()
+    unfrozen_params: int = sum(1 for p in model.backbone.parameters() if p.requires_grad)
+    
+    assert unfrozen_params == total_backbone_params, "Not all backbone parameters were unfrozen"
+
+def test_factory_functions() -> None:
+    # Test factory function implementations
+    available_models: List[str] = get_available_models()
+    assert len(available_models) > 0, "No available models found"
+    assert 'vit_base_patch16_224' in available_models, "Expected model not in available models"
+    
+    # Test model info summary
+    model: nn.Module = create_model('vit_base_patch16_224')
+    info_summary: Dict[str, Any] = get_model_info_summary(model)
+    
+    required_keys: List[str] = ['total_parameters', 'trainable_parameters', 'model_type']
+    for key in required_keys:
+        assert key in info_summary, f"Missing key '{key}' in model info summary"
+
+def test_model_builder() -> None:
+    # Test ModelBuilder functionality
+    builder: ModelBuilder = ModelBuilder()
+    
+    model: nn.Module = (builder
+                       .backbone('vit_base_patch16_224')
+                       .decoder([256, 512, 768, 768])
+                       .training_config(use_checkpointing=False)
+                       .build())
+    
+    assert isinstance(model, nn.Module), "ModelBuilder did not produce a valid model"
+    assert hasattr(model, 'forward'), "Built model missing forward method"
+
+def test_configuration_validation() -> None:
+    # Test configuration validation functions
+    valid_config: Dict[str, Any] = {
+        'backbone_name': 'vit_base_patch16_224',
+        'decoder_channels': [256, 512, 768, 768],
+        'use_attention': False,
+        'final_activation': 'sigmoid'
+    }
+    
+    # This should not raise an exception
+    validate_model_config(valid_config)
+    
+    # Test invalid configuration
+    invalid_config: Dict[str, Any] = {
+        'backbone_name': 'nonexistent_model',
+        'decoder_channels': [-1, 0]  # Invalid negative/zero channels
+    }
+    
+    with pytest.raises((ConfigValidationError, ValueError)):
+        validate_model_config(invalid_config)
+
+def test_tensor_validation_functions() -> None:
+    # Test tensor validation utilities
+    valid_tensor: torch.Tensor = torch.randn(2, 3, 224, 224)
+    validate_tensor_input(valid_tensor, "test_tensor", expected_dims=4)
+    
+    # Test invalid tensor validation
+    invalid_tensor: torch.Tensor = torch.randn(2, 3)  # Wrong dimensions
+    
+    with pytest.raises(TensorValidationError):
+        validate_tensor_input(invalid_tensor, "invalid_tensor", expected_dims=4)
+
+def test_feature_extraction() -> None:
+    # Test feature extraction from backbone
+    model: edepth = edepth('vit_base_patch16_224')
+    model.eval()
+    
+    input_tensor: torch.Tensor = torch.randn(1, 3, 224, 224)
+    
+    with torch.no_grad():
+        # Get backbone features
+        backbone_features: List[torch.Tensor] = model.backbone(input_tensor)
+        
+        assert isinstance(backbone_features, list), "Backbone features should be a list"
+        assert len(backbone_features) > 0, "No features extracted from backbone"
+        
+        # Validate each feature tensor
+        for i, feature in enumerate(backbone_features):
+            assert isinstance(feature, torch.Tensor), f"Feature {i} is not a tensor"
+            assert feature.dim() == 4, f"Feature {i} should have 4 dimensions, got {feature.dim()}"
+
+def test_model_checkpointing() -> None:
+    # Test model checkpoint saving and loading
+    model: nn.Module = create_model('vit_base_patch16_224')
+    checkpoint_path: str = "/tmp/test_checkpoint.pth"
+    
+    # Test saving checkpoint
+    if hasattr(model, 'save_checkpoint'):
+        model.save_checkpoint(checkpoint_path)
+        
+        # Test loading checkpoint
+        loaded_metadata: Dict[str, Any] = model.load_checkpoint(checkpoint_path)
+        assert isinstance(loaded_metadata, dict), "Checkpoint metadata should be a dictionary"
+
+def test_interpolation_functionality() -> None:
+    # Test feature interpolation utility
+    feature_tensor: torch.Tensor = torch.randn(1, 256, 14, 14)
+    target_size: Tuple[int, int] = (28, 28)
+    
+    interpolated: torch.Tensor = interpolate_features(feature_tensor, target_size)
+    
+    assert interpolated.shape[-2:] == target_size, f"Interpolation failed: expected {target_size}, got {interpolated.shape[-2:]}"
+    assert interpolated.shape[:2] == feature_tensor.shape[:2], "Batch and channel dimensions should remain unchanged"
+
+def test_config_loading() -> None:
+    # Test configuration loading functions
+    available_backbones: List[str] = list_available_backbones()
+    available_models: List[str] = list_available_models()
+    
+    assert len(available_backbones) > 0, "No available backbones found"
+    assert len(available_models) > 0, "No available models found"
+    
+    # Test getting specific configurations
+    for model_name in available_models[:3]:  # Test first 3 models
+        config: Dict[str, Any] = get_model_config(model_name)
+        backbone_config: Dict[str, Any] = get_backbone_config(model_name)
+        
+        assert 'backbone_name' in config, f"Config missing backbone_name for {model_name}"
+        assert 'patch_size' in backbone_config, f"Backbone config missing patch_size for {model_name}"
+
+def test_edge_cases() -> None:
+    # Test various edge cases
+    
+    # Test with minimum batch size
+    model: nn.Module = create_model('vit_base_patch16_224')
+    model.eval()
+    
+    min_input: torch.Tensor = torch.randn(1, 3, 224, 224)
+    with torch.no_grad():
+        min_output: torch.Tensor = model(min_input)
+    
+    assert min_output.shape[0] == 1, "Minimum batch size test failed"
+    
+    # Test with larger batch size
+    large_input: torch.Tensor = torch.randn(8, 3, 224, 224)
+    with torch.no_grad():
+        large_output: torch.Tensor = model(large_input)
+    
+    assert large_output.shape[0] == 8, "Large batch size test failed"
+
+def test_device_compatibility() -> None:
+    # Test device compatibility
+    model: nn.Module = create_model('vit_base_patch16_224')
+    
+    # Test CPU operation
+    cpu_input: torch.Tensor = torch.randn(1, 3, 224, 224)
+    model.eval()
+    
+    with torch.no_grad():
+        cpu_output: torch.Tensor = model(cpu_input)
+    
+    assert cpu_output.device == cpu_input.device, "Device mismatch between input and output"
+    
+    # Test GPU operation if available
+    if torch.cuda.is_available():
+        model_cuda: nn.Module = model.cuda()
+        cuda_input: torch.Tensor = torch.randn(1, 3, 224, 224).cuda()
+        
+        with torch.no_grad():
+            cuda_output: torch.Tensor = model_cuda(cuda_input)
+        
+        assert cuda_output.device == cuda_input.device, "CUDA device mismatch"
+
+def test_model_modes() -> None:
+    # Test training and evaluation modes
+    model: nn.Module = create_model('vit_base_patch16_224')
+    
+    # Test training mode
+    model.train()
+    assert model.training, "Model should be in training mode"
+    
+    # Test evaluation mode
+    model.eval()
+    assert not model.training, "Model should be in evaluation mode"
+
+def test_activation_functions() -> None:
+    # Test different activation functions
+    activations: List[str] = ['sigmoid', 'tanh', 'relu', 'none']
+    
+    for activation in activations:
+        config: Dict[str, Any] = {
+            'backbone_name': 'vit_base_patch16_224',
+            'final_activation': activation
+        }
+        
+        model: nn.Module = create_model('vit_base_patch16_224', config)
+        input_tensor: torch.Tensor = torch.randn(1, 3, 224, 224)
+        
+        with torch.no_grad():
+            output: torch.Tensor = model(input_tensor)
+        
+        # Validate output range based on activation
+        if activation == 'sigmoid':
+            assert output.min() >= 0.0 and output.max() <= 1.0, f"Sigmoid output out of range [0,1]"
+        elif activation == 'tanh':
+            assert output.min() >= -1.0 and output.max() <= 1.0, f"Tanh output out of range [-1,1]"
+        elif activation == 'relu':
+            assert output.min() >= 0.0, f"ReLU output contains negative values"
+
+def test_attention_mechanism() -> None:
+    # Test attention mechanism in decoder
+    config_with_attention: Dict[str, Any] = {
+        'backbone_name': 'vit_base_patch16_224',
+        'use_attention': True
+    }
+    
+    config_without_attention: Dict[str, Any] = {
+        'backbone_name': 'vit_base_patch16_224',
+        'use_attention': False
+    }
+    
+    model_with_attn: nn.Module = create_model('vit_base_patch16_224', config_with_attention)
+    model_without_attn: nn.Module = create_model('vit_base_patch16_224', config_without_attention)
+    
+    input_tensor: torch.Tensor = torch.randn(1, 3, 224, 224)
+    
+    with torch.no_grad():
+        output_with_attn: torch.Tensor = model_with_attn(input_tensor)
+        output_without_attn: torch.Tensor = model_without_attn(input_tensor)
+    
+    # Outputs should have same shape but potentially different values
+    assert output_with_attn.shape == output_without_attn.shape, "Attention mechanism changed output shape"
+
+def test_model_memory_usage() -> None:
+    # Test model memory usage tracking
+    model: nn.Module = create_model('vit_base_patch16_224')
+    model_info: ModelInfo = get_model_info(model)
+    
+    memory_mb: float = model_info.model_size_mb
+    assert memory_mb > 0, "Model memory usage should be positive"
+    assert memory_mb < 10000, "Model memory usage seems unreasonably high"  # Sanity check
+
+def test_parameter_estimation() -> None:
+    # Test parameter estimation functionality
+    estimation: Dict[str, Any] = estimate_model_parameters('vit_base_patch16_224')
+    
+    if 'error' not in estimation:
+        assert 'total_parameters' in estimation, "Parameter estimation missing total_parameters"
+        assert estimation['total_parameters'] > 0, "Estimated parameters should be positive"
+
+def test_model_summary_functionality() -> None:
+    # Test model summary generation
+    model: edepth = edepth('vit_base_patch16_224')
+    
+    if hasattr(model, 'get_model_summary'):
+        summary: Dict[str, Any] = model.get_model_summary()
+        
+        expected_keys: List[str] = ['backbone_name', 'extract_layers', 'decoder_channels']
+        for key in expected_keys:
+            assert key in summary, f"Model summary missing key: {key}"
+
+def run_comprehensive_test_suite() -> Dict[str, Any]:
+    # Comprehensive test suite runner
+    test_results: Dict[str, Any] = {
+        'timestamp': time.time(),
+        'tests_passed': 0,
+        'tests_failed': 0,
+        'failures': []
+    }
+    
+    test_functions: List[callable] = [
+        test_model_creation_basic,
+        test_model_creation_with_config,
+        test_model_forward_pass_basic,
+        test_model_forward_pass_different_sizes,
+        test_model_gradient_flow,
+        test_model_parameter_count,
+        test_backbone_functionality,
+        test_factory_functions,
+        test_model_builder,
+        test_configuration_validation,
+        test_tensor_validation_functions,
+        test_feature_extraction,
+        test_interpolation_functionality,
+        test_config_loading,
+        test_edge_cases,
+        test_device_compatibility,
+        test_model_modes,
+        test_activation_functions,
+        test_attention_mechanism,
+        test_model_memory_usage,
+        test_parameter_estimation,
+        test_model_summary_functionality
+    ]
+    
+    for test_func in test_functions:
         try:
-            pred = model(dummy_input)  # Forward pass through the model
-            
-            # Compute all metrics between prediction and target
-            all_metrics = metrics_handler.compute_all_metrics(pred, dummy_target)
-            
-            metrics_results = {
-                'metrics_computation': 'success',
-                'metrics_values': all_metrics,
-                'pred_shape': tuple(pred.shape),
-                'target_shape': tuple(dummy_target.shape)
-            }
-            
-            logger.info(f"Metrics test successful: {list(all_metrics.keys())}")  # Log successful metrics
-            
+            test_func()
+            test_results['tests_passed'] += 1
+            logger.info(f"✓ {test_func.__name__} passed")
         except Exception as e:
-            # If any error occurs during metrics computation
-            metrics_results = {
-                'metrics_computation': 'failed',
+            test_results['tests_failed'] += 1
+            test_results['failures'].append({
+                'test': test_func.__name__,
                 'error': str(e)
-            }
-            logger.error(f"Metrics test failed: {e}")  # Log failure message
+            })
+            logger.error(f"✗ {test_func.__name__} failed: {e}")
     
-    return metrics_results  # Return results dictionary
-
-def test_model_loss_computation(model: nn.Module, input_size: tuple = (1, 3, 224, 224)) -> Dict[str, Any]:
-    # Get the device of the model parameters
-    device = next(model.parameters()).device
-    model.train()  # Set model to training mode (for loss computation)
-    
-    loss_results = {}
-    
-    try:
-        # Create loss functions
-        silog_loss = create_loss('silog')
-        berhu_loss = create_loss('berhu')
-        
-        # Generate dummy input and target
-        dummy_input = torch.randn(*input_size).to(device)
-        dummy_target = torch.rand(*input_size).to(device)
-        
-        pred = model(dummy_input)  # Forward pass
-        
-        # Compute losses
-        silog_value = silog_loss(pred, dummy_target)
-        berhu_value = berhu_loss(pred, dummy_target)
-        
-        loss_results = {
-            'loss_computation': 'success',
-            'silog_loss': float(silog_value),
-            'berhu_loss': float(berhu_value),
-            'losses_require_grad': {
-                'silog': silog_value.requires_grad,
-                'berhu': berhu_value.requires_grad
-            }
-        }
-        
-        logger.info(f"Loss computation test successful")  # Log success
-        
-    except Exception as e:
-        # Handle errors in loss computation
-        loss_results = {
-            'loss_computation': 'failed',
-            'error': str(e)
-        }
-        logger.error(f"Loss computation test failed: {e}")  # Log error
-    
-    return loss_results  # Return results dictionary
-
-def test_model_gradient_flow(model: nn.Module, input_size: tuple = (1, 3, 224, 224)) -> Dict[str, Any]:
-    # Get the device of the model parameters
-    device = next(model.parameters()).device
-    model.train()  # Set model to training mode to enable gradient flow
-    
-    gradient_results = {}
-    
-    try:
-        # Generate dummy input and target
-        dummy_input = torch.randn(*input_size).to(device)
-        dummy_target = torch.rand(*input_size).to(device)
-        
-        silog_loss = create_loss('silog')  # Create loss function
-        
-        pred = model(dummy_input)  # Forward pass
-        loss = silog_loss(pred, dummy_target)  # Compute loss
-        
-        model.zero_grad()  # Clear previous gradients
-        loss.backward()  # Backpropagation to compute gradients
-        
-        grad_norms = {}  # Store gradient norms for parameters
-        param_count = 0
-        grad_count = 0
-        
-        for name, param in model.named_parameters():
-            if param.grad is not None:
-                grad_norm = param.grad.norm().item()  # Compute norm of gradient
-                grad_norms[name] = grad_norm
-                grad_count += 1  # Count parameters with gradients
-            param_count += 1  # Count total parameters
-        
-        gradient_results = {
-            'gradient_flow': 'success',
-            'total_parameters': param_count,
-            'parameters_with_gradients': grad_count,
-            'gradient_coverage': grad_count / param_count if param_count > 0 else 0,
-            'gradient_norms': grad_norms,
-            'mean_gradient_norm': float(torch.tensor(list(grad_norms.values())).mean()) if grad_norms else 0
-        }
-        
-        logger.info(f"Gradient flow test successful: {grad_count}/{param_count} parameters have gradients")
-        
-    except Exception as e:
-        # Handle errors during gradient computation
-        gradient_results = {
-            'gradient_flow': 'failed',
-            'error': str(e)
-        }
-        logger.error(f"Gradient flow test failed: {e}")  # Log failure
-    
-    return gradient_results  # Return results dictionary
-
-def run_comprehensive_model_test(model_name: str, input_size: tuple = (1, 3, 224, 224)) -> Dict[str, Any]:
-    # Log the start of the comprehensive model test
-    logger.info(f"Starting comprehensive test for model: {model_name}")
-    
-    # Initialize the results dictionary with basic metadata
-    comprehensive_results = {
-        'model_name': model_name,
-        'input_size': input_size,
-        'timestamp': time.time()
-    }
-    
-    try:
-        # Attempt to create the model instance
-        model = create_model(model_name)
-        comprehensive_results['model_creation'] = 'success'
-        
-        # Perform complexity analysis on the model
-        comprehensive_results['complexity_analysis'] = analyze_model_complexity(model, input_size)
-        
-        # Run a forward pass to ensure model operates correctly
-        comprehensive_results['forward_pass_test'] = test_model_forward_pass(model, input_size)
-        
-        # Run evaluation metrics to assess model performance
-        comprehensive_results['metrics_test'] = test_model_metrics(model, input_size)
-        
-        # Test loss computation on a sample input
-        comprehensive_results['loss_computation_test'] = test_model_loss_computation(model, input_size)
-        
-        # Check if gradients can properly flow through the model
-        comprehensive_results['gradient_flow_test'] = test_model_gradient_flow(model, input_size)
-        
-        # Benchmark the model over several runs for performance profiling
-        comprehensive_results['benchmark_results'] = benchmark_model(model, input_size, num_runs=10)
-        
-        # Mark the overall test as successful
-        comprehensive_results['overall_status'] = 'success'
-        
-        # Log success
-        logger.info(f"Comprehensive test completed successfully for {model_name}")
-        
-    except Exception as e:
-        # If any error occurs, log and record the failure
-        comprehensive_results['model_creation'] = 'failed'
-        comprehensive_results['error'] = str(e)
-        comprehensive_results['overall_status'] = 'failed'
-        logger.error(f"Comprehensive test failed for {model_name}: {e}")
-    
-    # Return the complete test results
-    return comprehensive_results
-
-def validate_model_checkpoint(checkpoint_path: str) -> Dict[str, Any]:
-    # Dictionary to store validation results
-    validation_results = {}
-    
-    try:
-        # Attempt to load model from the given checkpoint path
-        model = create_model_from_checkpoint(checkpoint_path)
-        validation_results['checkpoint_loading'] = 'success'
-        
-        # Run comprehensive model test using the loaded model
-        validation_results['model_tests'] = run_comprehensive_model_test(
-            model.__class__.__name__.lower(), 
-            input_size=(1, 3, 224, 224)
-        )
-        
-        # Log success
-        logger.info(f"Checkpoint validation completed for {checkpoint_path}")
-        
-    except Exception as e:
-        # On failure, log the error and update the result
-        validation_results['checkpoint_loading'] = 'failed'
-        validation_results['error'] = str(e)
-        logger.error(f"Checkpoint validation failed: {e}")
-    
-    # Return checkpoint validation results
-    return validation_results
-
-def generate_model_report(model_names: List[str], output_path: Optional[str] = None) -> Dict[str, Any]:
-    # Log the beginning of report generation
-    logger.info(f"Generating model report for {len(model_names)} models")
-    
-    # Initialize the report dictionary
-    report = {
-        'report_timestamp': time.time(),
-        'tested_models': model_names,
-        'model_results': {}
-    }
-    
-    # Iterate over each model and test it
-    for model_name in model_names:
-        logger.info(f"Testing model: {model_name}")
-        report['model_results'][model_name] = run_comprehensive_model_test(model_name)
-    
-    # If an output path is provided, save the report to disk
-    if output_path:
-        import json
-        with open(output_path, 'w') as f:
-            json.dump(report, f, indent=2)
-        logger.info(f"Model report saved to {output_path}")
-    
-    # Return the generated report
-    return report
+    return test_results

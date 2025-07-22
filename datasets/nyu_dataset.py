@@ -4,12 +4,12 @@
 # ehsanasgharzde, hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import logging
-from pathlib import Path
-from typing import Dict, Tuple, List, Any
 import numpy as np
+from pathlib import Path
 import torchvision.transforms as T
+from typing import Dict, Tuple, List, Any
 
-from utils.dataset import BaseDataset
+from ..utils.dataset import BaseDataset
 
 logger = logging.getLogger(__name__)
 
@@ -202,3 +202,4 @@ class NYUV2Dataset(BaseDataset):
             'depth': depth,
             'valid_mask': T.ToTensor()(valid_mask.astype(np.float32))
         }
+    

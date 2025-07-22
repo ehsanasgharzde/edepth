@@ -3,15 +3,14 @@
 # hosseinsolymanzadeh - PROPER COMMENTING
 # ehsanasgharzde, hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
-import numpy as np
-from scipy.ndimage import zoom
-import torchvision.transforms as T
 import cv2
 import logging
+import numpy as np
 from pathlib import Path
+import torchvision.transforms as T
 from typing import Dict, List, Optional, Tuple, Any
 
-from utils.dataset import BaseDataset
+from ..utils.dataset import BaseDataset
 
 logger = logging.getLogger(__name__)
 
@@ -175,8 +174,11 @@ class UnrealStereo4KDataset(BaseDataset):
           
     def load_disparity(self, path: Path) -> np.ndarray:
         # Return cached disparity if caching enabled and available
-        if self.cache and path in self.cache_data: #type: ignore 
-            return self.cache_data[path] #type: ignore 
+        if self.cache_data is not None:
+            cache_key = self._get_cache_key(path, 'disparity')
+            with self.cache_lock:
+                if cache_key in self.cache_data:
+                    return self.cache_data[cache_key]
         
         try:
             # Load disparity map as float32 numpy array
@@ -187,7 +189,8 @@ class UnrealStereo4KDataset(BaseDataset):
                 scale_h = self.img_size[0] / disparity.shape[0]
                 scale_w = self.img_size[1] / disparity.shape[1]
                 # Resize disparity using nearest neighbor interpolation (order=0)
-                disparity = zoom(disparity, (scale_h, scale_w), order=0)
+                disparity = cv2.resize(disparity, (self.img_size[1], self.img_size[0]), interpolation=cv2.INTER_NEAREST)
+
                 # Scale disparity values accordingly
                 disparity = disparity * min(scale_h, scale_w)
             
@@ -195,8 +198,9 @@ class UnrealStereo4KDataset(BaseDataset):
             depth = self.disparity_to_depth(disparity)
             
             # Cache depth if caching enabled
-            if self.cache:
-                self.cache_data[path] = depth #type: ignore 
+            if self.cache_data is not None:
+                with self.cache_lock:
+                    self.cache_data[cache_key] = depth.copy() 
             
             return depth
         except Exception as e:
@@ -346,4 +350,4 @@ class UnrealStereo4KDataset(BaseDataset):
             result['right_rgb'] = right_rgb_tensor
         
         return result
-
+    

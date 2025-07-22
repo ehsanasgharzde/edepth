@@ -5,17 +5,19 @@
 
 import os
 import glob
+import logging
 import numpy as np
 import torchvision.transforms as T
-import logging
+from typing import List, Dict, Optional, Tuple, Any
 
-from utils.dataset import BaseDataset 
+from ..utils.dataset import BaseDataset 
 
 logger = logging.getLogger(__name__)
 
 class KITTIDataset(BaseDataset):
-    def __init__(self, data_root, split='train', img_size=(352, 1216),
-                depth_scale=256.0, cache=False, use_dense_depth=False, validate_data=True):
+    def __init__(self, data_root: str, split: str = 'train', img_size: Tuple[int, int] = (352, 1216),
+                 depth_scale: float = 256.0, cache: bool = False, use_dense_depth: bool = False, 
+                 validate_data: bool = True) -> None:
         super().__init__(data_root, split, img_size, depth_scale, cache, validate_data)
         
         self.use_dense_depth = use_dense_depth  # Whether to use dense depth maps
@@ -25,13 +27,13 @@ class KITTIDataset(BaseDataset):
         if validate_data:
             self.validate_dataset_structure()  # Check if the dataset directory structure is valid
         
-        self.samples = self.load_samples()  # Load the list of samples (e.g., file paths)
+        self.samples: List[Dict[str, str]] = self.load_samples()  # Load the list of samples (e.g., file paths)
         
-        self.cache_data = {} if self.cache else None  # Initialize in-memory cache if enabled
+        self.cache_data: Optional[Dict[str, Any]] = {} if self.cache else None  # Initialize in-memory cache if enabled
         
         logger.info(f"KITTI dataset initialized: {len(self.samples)} samples, split={split}")  # Log dataset loading info
 
-    def validate_dataset_structure(self):
+    def validate_dataset_structure(self) -> None:
         # Construct the path to the 'sequences' directory
         sequences_path = os.path.join(self.data_root, 'sequences')
         # Check if the 'sequences' directory exists
@@ -44,7 +46,7 @@ class KITTIDataset(BaseDataset):
         if not os.path.isdir(calib_path):
             raise FileNotFoundError(f"Calibration directory missing: {calib_path}")
 
-    def load_samples(self):
+    def load_samples(self) -> List[Dict[str, str]]:
         samples = []  # List to store valid samples
         sequences_path = os.path.join(self.data_root, 'sequences')  # Base path for sequences
         
@@ -101,7 +103,7 @@ class KITTIDataset(BaseDataset):
         logger.info(f"Loaded {len(samples)} samples, missing depth files: {missing_depth_count}")
         return samples  # Return the full list of valid samples
 
-    def get_sequences(self):
+    def get_sequences(self) -> List[str]:
         # Path to the 'sequences' directory
         sequences_path = os.path.join(self.data_root, 'sequences')
         
@@ -110,11 +112,11 @@ class KITTIDataset(BaseDataset):
                                if os.path.isdir(os.path.join(sequences_path, d))])
         return all_sequences
 
-    def compute_statistics(self):
+    def compute_statistics(self) -> Dict[str, Any]:
         rgb_sums = np.zeros(3)        # Sum of RGB channel means
         rgb_sq_sums = np.zeros(3)     # Sum of squared RGB channel means
         pixel_count = 0               # Counter for number of processed images
-        depth_values = []            # List to collect valid depth values
+        depth_values: List[np.ndarray] = []            # List to collect valid depth values
         
         sample_count = min(len(self.samples), 1000)  # Limit to first 1000 samples for speed
         
@@ -169,7 +171,7 @@ class KITTIDataset(BaseDataset):
             'num_samples': len(self.samples)
         }
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
         # Check for out-of-bounds index
         if idx < 0 or idx >= len(self):
             raise IndexError(f"Index {idx} out of bounds for dataset of size {len(self)}")
@@ -198,3 +200,4 @@ class KITTIDataset(BaseDataset):
             'sequence': sample['sequence'],
             'basename': sample['basename']
         }
+    

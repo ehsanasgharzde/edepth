@@ -3,16 +3,16 @@
 # hosseinsolymanzadeh - PROPER COMMENTING
 # ehsanasgharzde, hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
-import numpy as np
-import torchvision.transforms as T
-import logging
-from pathlib import Path
-from typing import Dict, List, Tuple, Any
 import cv2
-import OpenEXR 
 import Imath
+import logging
+import OpenEXR 
+import numpy as np
+from pathlib import Path
+import torchvision.transforms as T
+from typing import Dict, List, Tuple, Any
 
-from utils.dataset import BaseDataset
+from ..utils.dataset import BaseDataset
 
 logger = logging.getLogger(__name__)
 
@@ -122,8 +122,11 @@ class ENRICHDataset(BaseDataset):
 
     def load_depth(self, path: Path) -> np.ndarray:
         # Return cached depth if available
-        if self.cache and path in self.cache_data:  # type: ignore
-            return self.cache_data[path]  # type: ignore
+        if self.cache_data is not None:
+            cache_key = self._get_cache_key(path, 'depth_exr')
+            with self.cache_lock:
+                if cache_key in self.cache_data:
+                    return self.cache_data[cache_key]
         
         try: 
             exr_file = OpenEXR.InputFile(str(path))
@@ -148,8 +151,9 @@ class ENRICHDataset(BaseDataset):
             depth[invalid_mask] = 0.0
             
             # Cache if enabled
-            if self.cache:
-                self.cache_data[path] = depth  # type: ignore
+            if self.cache_data is not None:
+                with self.cache_lock:
+                    self.cache_data[cache_key] = depth.copy()
             
             return depth
         except ImportError:
@@ -263,7 +267,7 @@ class ENRICHDataset(BaseDataset):
             depth_tensor = depth_tensor.unsqueeze(0)  # type: ignore
 
         # Generate binary valid depth mask
-        valid_mask = self.create_valid_depth_mask(depth_tensor.squeeze(0).numpy()) #type: ignore
+        valid_mask = self.create_default_mask(depth_tensor.squeeze(0).numpy()) #type: ignore
 
         # Return sample as dictionary
         return {
@@ -271,3 +275,4 @@ class ENRICHDataset(BaseDataset):
             'depth': depth_tensor,
             'valid_mask': T.ToTensor()(valid_mask.astype(np.float32)),  # type: ignore
         }
+    

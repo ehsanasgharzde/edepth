@@ -3,11 +3,11 @@
 # hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import torch
-import numpy as np
 import logging
+import numpy as np
 from typing import Optional, Tuple, Union, List, Dict
 
-from utils.core import (create_default_mask, apply_mask_safely, validate_tensor_inputs)
+from ..utils.core import create_default_mask, apply_mask_safely, validate_tensor_inputs
 
 logger = logging.getLogger(__name__)
 
@@ -159,8 +159,8 @@ def compute_all_metrics(pred: torch.Tensor, target: torch.Tensor, mask: Optional
     try:
         # Compute RMSE and MAE with optional confidence intervals
         if include_confidence:
-            metrics['rmse'] = rmse(pred, target, mask, with_confidence=True)
-            metrics['mae'] = mae(pred, target, mask, with_confidence=True)
+            metrics['rmse'] = rmse(pred, target, mask)
+            metrics['mae'] = mae(pred, target, mask)
         else:
             metrics['rmse'] = rmse(pred, target, mask)
             metrics['mae'] = mae(pred, target, mask)
@@ -180,6 +180,16 @@ def compute_all_metrics(pred: torch.Tensor, target: torch.Tensor, mask: Optional
     
     # Return dictionary containing all computed metrics
     return metrics
+    
+# Core evaluation metrics
+METRICS = {
+    'rmse': rmse,
+    'mae': mae,
+    'delta1': delta1,
+    'delta2': delta2,
+    'delta3': delta3,
+    'silog': silog
+}
 
 def compute_batch_metrics(pred_batch: torch.Tensor, target_batch: torch.Tensor, 
                          mask_batch: Optional[torch.Tensor] = None, 
@@ -202,9 +212,9 @@ def compute_batch_metrics(pred_batch: torch.Tensor, target_batch: torch.Tensor,
         try:
             # Compute each requested metric if the method exists
             for metric in metrics_list:
-                if hasattr(metric):
+                if metric in METRICS:  #Check if metric exists in registry
                     # Call the metric method dynamically and store the result
-                    value = getattr(metric)(pred, target, mask)
+                    value = METRICS(metric)(pred, target, mask)
                     results[metric].append(value)
                 else:
                     # Log a warning for unknown metrics and append NaN
@@ -310,3 +320,4 @@ def create_metric_report(pred: torch.Tensor, target: torch.Tensor,
         'sanity_check': is_valid,
         'warnings': warnings_list
     }
+
