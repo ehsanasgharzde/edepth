@@ -10,7 +10,7 @@ import time
 import logging
 from typing import Dict, List, Any
 from dataclasses import dataclass, field
-from collections import defaultdict, deque
+from collections import deque
 import json
 import pickle
 from datetime import datetime

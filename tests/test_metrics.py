@@ -15,7 +15,7 @@ from metrics.metrics import (
 )
 from metrics.factory import (
     get_metric, get_all_metrics, get_core_metrics,
-    list_metrics, create_evaluator, METRICS
+    list_metrics, create_evaluator
 )
 from utils.core_utils import (
     create_default_mask, apply_mask_safely, resize_tensors_to_scale,

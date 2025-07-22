@@ -7,7 +7,7 @@ import json
 import gzip
 import shutil
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List
 from pathlib import Path
 from dataclasses import asdict
 import threading

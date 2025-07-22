@@ -4,8 +4,8 @@
 
 import torch
 import numpy as np
-from typing import Dict, List, Any, Optional, Union, Tuple
-from collections import defaultdict, deque
+from typing import Dict, List, Any, Optional
+from collections import deque
 import logging
 import hashlib
 import json

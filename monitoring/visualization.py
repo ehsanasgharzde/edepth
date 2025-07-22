@@ -8,9 +8,7 @@ import seaborn as sns
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
-import torch
-from typing import Dict, List, Any, Optional, Union
-from collections import defaultdict
+from typing import Dict, List, Any, Optional
 import logging
 from datetime import datetime, timedelta
 from dataclasses import asdict

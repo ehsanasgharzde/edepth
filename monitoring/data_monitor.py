@@ -4,7 +4,7 @@
 
 import torch
 import numpy as np
-from typing import Union, Dict, List, Any, Optional, Callable, Tuple
+from typing import Union, Dict, List, Any, Optional, Tuple
 from collections import defaultdict, deque
 import logging
 from dataclasses import dataclass, field

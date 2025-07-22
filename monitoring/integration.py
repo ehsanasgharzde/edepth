@@ -2,16 +2,13 @@
 # ehsanasgharzde - INTEGRATION MANAGER
 # hosseinsolymanzadeh - PROPER COMMENTING
 
-from typing import Dict, Any, List, Optional, Callable
-import torch
+from typing import Dict, Any, List, Optional
 import torch.nn as nn
 import logging
 import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
-from collections import defaultdict, deque
 
 from .data_monitor import DataMonitor
 from .system_monitor import SystemMonitor

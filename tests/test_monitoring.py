@@ -3,16 +3,9 @@
 # hosseinsolymanzadeh - PROPER COMMENTING
 
 import unittest
-from unittest.mock import MagicMock, patch, Mock
 import logging
 import torch
-import numpy as np
-from datetime import datetime
-from pathlib import Path
-import sys
 import os
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from monitoring.config import MonitoringConfig
 from monitoring.data_monitor import DataMonitor
@@ -27,7 +20,7 @@ from monitoring import ComprehensiveMonitor
 
 class TestMonitoringSystem(unittest.TestCase):
     
-    def setUp(self):
+    def setup(self):
         # Initialize configuration and logger for the test cases
         self.config = MonitoringConfig()
         self.logger = logging.getLogger("test_monitor")

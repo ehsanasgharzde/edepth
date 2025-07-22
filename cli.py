@@ -8,13 +8,10 @@ import sys
 import os
 import json
 import time
-from typing import Dict, Any, List, Optional, Tuple
-from pathlib import Path
+from typing import Dict, Any, Optional
 import torch
-import torch.nn as nn
 import torch.utils.data
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter #type: ignore 
 from tqdm import tqdm
 import numpy as np
 from PIL import Image
@@ -24,18 +21,17 @@ from torchvision import transforms
 import traceback
 import psutil
 import platform
+from pathlib import Path
 
 from configs.config_loader import load_config
 from models.edepth import edepth
 from training.trainer import Trainer
-from utils.export import export_onnx, export_torchscript, print_deployment_plan #type: ignore 
+from utils.export import print_deployment_plan #type: ignore 
 from datasets.nyu_dataset import NYUV2Dataset
 from datasets.kitti_dataset import KITTIDataset
 from datasets.enrich_dataset import ENRICHDataset
 from datasets.unreal_dataset import UnrealStereo4KDataset
-from losses.factory import create_loss
-from metrics.metrics import Metrics
-from inference.inference import run_inference, run_batch_inference #type: ignore  
+from metrics.metrics import Metrics  # type: ignore
 
 logger = logging.getLogger(__name__)
 

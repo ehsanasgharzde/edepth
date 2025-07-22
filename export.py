@@ -22,7 +22,6 @@ logger = logging.getLogger(__name__)
 # Optional imports for different export formats
 try:
     import onnx
-    import onnxruntime as ort
     ONNX_AVAILABLE = True
 except ImportError:
     ONNX_AVAILABLE = False
