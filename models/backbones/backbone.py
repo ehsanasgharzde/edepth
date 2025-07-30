@@ -1,16 +1,16 @@
-# File: models/backbones/backbone_fixed.py
+# File: models/backbones/backbone.py
 # ehsanasgharzde - FULL BACKBONE VIT IMPLEMENTATION
 # ehsanasgharzde - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
-import torch
-import torch.nn as nn
 import timm
-from typing import List, Optional, Dict, Any
+import torch
 import logging
+import torch.nn as nn
 import torch.utils.checkpoint as checkpoint
+from typing import List, Optional, Dict, Any
 
 # Import centralized utilities
-from configs.config import get_backbone_config, list_available_backbones
+from configs.config import BackboneType
 from utils.model_validation import (
     validate_backbone_name, validate_patch_size, validate_extract_layers, 
     validate_spatial_dimensions, validate_vit_input
@@ -21,6 +21,59 @@ from utils.model_operation import (
 ) 
 
 logger = logging.getLogger(__name__)
+
+# Utility functions to replace the missing ones from old config system
+def list_available_backbones() -> List[str]:
+    # Return list of available backbone models
+    return [backbone.value for backbone in BackboneType]
+
+def get_backbone_config(model_name: str) -> Dict[str, Any]:
+    # Get configuration for a specific backbone model
+    # Define backbone configs based on model_name
+    configs = {
+        BackboneType.VIT_SMALL_PATCH16_224.value: {
+            'patch_size': 16,
+            'img_size': 224,
+            'embed_dim': 384,
+            'num_layers': 12
+        },
+        BackboneType.VIT_BASE_PATCH16_224.value: {
+            'patch_size': 16,
+            'img_size': 224,
+            'embed_dim': 768,
+            'num_layers': 12
+        },
+        BackboneType.VIT_BASE_PATCH16_384.value: {
+            'patch_size': 16,
+            'img_size': 384,
+            'embed_dim': 768,
+            'num_layers': 12
+        },
+        BackboneType.VIT_BASE_PATCH8_224.value: {
+            'patch_size': 8,
+            'img_size': 224,
+            'embed_dim': 768,
+            'num_layers': 12
+        },
+        BackboneType.VIT_LARGE_PATCH16_224.value: {
+            'patch_size': 16,
+            'img_size': 224,
+            'embed_dim': 1024,
+            'num_layers': 24
+        },
+        BackboneType.VIT_LARGE_PATCH16_384.value: {
+            'patch_size': 16,
+            'img_size': 384,
+            'embed_dim': 1024,
+            'num_layers': 24
+        }
+    }
+    
+    # Check if the model exists in our configs
+    if model_name not in configs:
+        raise ValueError(f"Backbone '{model_name}' configuration not found")
+        
+    return configs[model_name]
 
 class ViT(nn.Module):
     def __init__(

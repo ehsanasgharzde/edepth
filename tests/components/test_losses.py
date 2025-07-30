@@ -36,7 +36,12 @@ from utils.base_losses import (
 # Import core utility functions
 from utils.tensor_validation import (
     create_default_mask, apply_mask_safely, validate_tensor_inputs,
-    validate_numerical_stability, resize_tensors_to_scale, validate_depth_image_compatibility
+    validate_numerical_stability, resize_tensors_to_scale, validate_depth_image_compatibility, 
+)
+
+# Import configuration components
+from configs.config import (
+    LossType, LossConfig, Config, ConfigFactory
 )
 
 # Configure logging for tests
@@ -563,6 +568,53 @@ def test_batch_size_scaling(batch_size: int) -> None:
     assert_loss_properties(loss_value)
     assert loss_value.shape == torch.Size([])  # Should be scalar
 
+# New tests for config integration
+def test_loss_config_from_enum() -> None:
+    # Test creating loss using enum from config.py
+    silog_type = LossType.SILOG
+    assert silog_type.value == "silog"
+    
+    # Create loss directly from enum value
+    loss_fn = create_loss(silog_type.value)
+    assert isinstance(loss_fn, SiLogLoss)
+
+def test_create_loss_from_loss_config() -> None:
+    # Create a LossConfig instance
+    loss_config = LossConfig(
+        loss_type="silog",
+        silog_lambda=0.9,
+    )
+    
+    # Create a loss from the config
+    loss_fn = create_loss(loss_config.loss_type, {'lambda_var': loss_config.silog_lambda})
+    assert isinstance(loss_fn, SiLogLoss)
+    assert loss_fn.lambda_var == 0.9
+
+def test_config_factory_for_testing() -> None:
+    # Create a debug config for testing
+    debug_config = ConfigFactory.create_debug_config()
+    
+    # Verify it has the expected loss config
+    loss_config = debug_config.training.loss
+    
+    # Create a loss using this config
+    loss_fn = create_loss(loss_config.loss_type)
+    
+    # Verify it's the correct type
+    expected_class = {
+        "silog": SiLogLoss,
+        "berhu": BerHuLoss,
+        "rmse": RMSELoss,
+        "mae": MAELoss,
+        "multi_scale": MultiScaleLoss,
+        "edge_aware_smoothness": EdgeAwareSmoothnessLoss,
+        "gradient_consistency": GradientConsistencyLoss,
+        "multi_loss": MultiLoss
+    }.get(loss_config.loss_type, None)
+    
+    if expected_class:
+        assert isinstance(loss_fn, expected_class)
+
 # Integration tests
 def test_complete_training_workflow(dummy_data: Dict[str, Any]) -> None:
     # Setup
@@ -600,4 +652,22 @@ def test_complete_training_workflow(dummy_data: Dict[str, Any]) -> None:
     stats = compute_loss_statistics(loss_history)
     assert stats['count'] == 3
     assert all(v >= 0 for v in loss_history)
+
+def test_config_to_loss_conversion() -> None:
+    # Create a config
+    config = Config()
+    config.training.loss = LossConfig(
+        loss_type="multi_loss",
+        loss_weights={"silog": 0.7, "rmse": 0.3}
+    )
     
+    # Convert config to loss configs
+    loss_configs = [
+        {'name': 'SiLogLoss', 'weight': 0.7, 'params': {'lambda_var': config.training.loss.silog_lambda}},
+        {'name': 'RMSELoss', 'weight': 0.3, 'params': {}}
+    ]
+    
+    # Create combined loss
+    combined_loss = create_combined_loss(loss_configs)
+    assert isinstance(combined_loss, MultiLoss)
+    assert len(combined_loss.losses) == 2

@@ -2,22 +2,19 @@
 # ehsanasgharzde - DYNAMIC MODEL CREATION AND CONFIGURATION VALIDATION
 # ehsanasgharzde - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
-import torch
-import torch.nn as nn
-from typing import List, Optional, Dict, Any, Type
 import os
-import yaml
+import torch
 import logging
 import traceback
+import torch.nn as nn
+from typing import List, Optional, Dict, Any, Type
 
 # Import centralized utilities
 from edepth import edepth
-from configs.config import (
-    get_model_config, list_available_models, validate_config,
-    get_backbone_config, list_available_backbones
-)
+from configs.config import ModelConfig, ConfigValidationError, BackboneType
+from utils.config_loader import load_config, create_config_manager
 from utils.model_validation import ( 
-    validate_backbone_name, ConfigValidationError,
+    validate_backbone_name,
     validate_decoder_channels
 )
 from utils.model_operation import (
@@ -31,7 +28,7 @@ MODEL_REGISTRY: Dict[str, Type[nn.Module]] = {}
 MODEL_CONFIGS: Dict[str, Dict[str, Any]] = {}
 
 def get_available_models() -> List[str]:
-    built_in_models = list_available_models()
+    built_in_models = [b.value for b in BackboneType]
     registered_models = list(MODEL_REGISTRY.keys())
     return built_in_models + registered_models
 
@@ -51,8 +48,10 @@ def create_model(
                 # Use registered model config
                 base_config = MODEL_CONFIGS[model_name].copy()
             else:
-                # Use built-in model config
-                base_config = get_model_config(model_name)
+                # Create default model config
+                base_config = ModelConfig()
+                base_config.backbone = model_name
+                base_config = base_config.to_dict()
         else:
             base_config = config.copy()
 
@@ -83,7 +82,7 @@ def validate_model_config(config: Dict[str, Any]) -> None:
     try:
         # Validate backbone configuration if present
         if 'backbone_name' in config:
-            available_backbones = list_available_backbones()
+            available_backbones = [b.value for b in BackboneType]
             validate_backbone_name(
                 config['backbone_name'], 
                 available_backbones, 
@@ -97,9 +96,14 @@ def validate_model_config(config: Dict[str, Any]) -> None:
                 name="decoder_channels"
             )
 
-        # Validate using centralized config validation
-        validate_config(config, config_type='backbone')
-        validate_config(config, config_type='decoder')
+        # Create model config object for validation
+        model_config = ModelConfig()
+        for key, value in config.items():
+            if hasattr(model_config, key):
+                setattr(model_config, key, value)
+                
+        # Validate using config's own validation method
+        model_config.validate()
 
     except Exception as e:
         raise ConfigValidationError(f"Model configuration validation failed: {e}")
@@ -109,14 +113,9 @@ def load_config_from_file(config_path: str) -> Dict[str, Any]:
         raise ConfigValidationError(f"Configuration file not found: {config_path}")
 
     try:
-        with open(config_path, 'r') as f:
-            if config_path.endswith(('.yaml', '.yml')):
-                config = yaml.safe_load(f)
-            else:
-                raise ConfigValidationError(
-                    "Unsupported config file format. Use YAML (.yaml/.yml)"
-                )
-
+        # Use config_loader utility
+        config_manager = create_config_manager()
+        config = load_config(config_path, config_manager=config_manager)
         logger.info(f"Loaded configuration from {config_path}")
         return config
 
@@ -193,19 +192,15 @@ class ModelBuilder:
         self._built: bool = False
 
     def backbone(self, backbone_name: str) -> 'ModelBuilder':
-        available_backbones = list_available_backbones()
+        available_backbones = [b.value for b in BackboneType]
         validate_backbone_name(backbone_name, available_backbones, "backbone_name")
 
         self._backbone_name = backbone_name
 
-        # Load default config for backbone
-        try:
-            default_config = get_model_config(backbone_name)
-            self._config.update(default_config)
-        except:
-            # Fallback to backbone config only
-            backbone_config = get_backbone_config(backbone_name)
-            self._config.update(backbone_config)
+        # Create default config for backbone
+        model_config = ModelConfig()
+        model_config.backbone = backbone_name
+        self._config.update(model_config.to_dict())
 
         return self
 
@@ -230,7 +225,7 @@ class ModelBuilder:
         pretrained: bool = True
     ) -> 'ModelBuilder':
         self._config.update({
-            'use_checkpointing': use_checkpointing,
+            'use_gradient_checkpointing': use_checkpointing,
             'pretrained': pretrained
         })
         return self
@@ -259,14 +254,16 @@ def get_model_info_summary(model: nn.Module) -> Dict[str, Any]:
 
 def estimate_model_parameters(model_name: str, config: Optional[Dict[str, Any]] = None) -> Dict[str, int]:
     try:
-        # Get configuration
+        # Get or create configuration
         if config is None:
-            config = get_model_config(model_name)
+            model_config = ModelConfig()
+            model_config.backbone = model_name
+            config = model_config.to_dict()
 
-        # Estimate based on configuration
-        embed_dim = config.get('embed_dim', 768) # type: ignore
-        num_layers = config.get('num_layers', 12) # type: ignore
-        decoder_channels = config.get('decoder_channels', [256, 512, 768, 768]) # type: ignore
+        # Extract parameters from config
+        embed_dim = config.get('embed_dim', 768)
+        num_layers = config.get('num_layers', 12)
+        decoder_channels = config.get('decoder_channels', [256, 512, 768, 768])
 
         # Rough estimation formulas
         backbone_params = embed_dim * embed_dim * num_layers * 4  # Simplified ViT estimation
@@ -282,8 +279,13 @@ def estimate_model_parameters(model_name: str, config: Optional[Dict[str, Any]] 
         logger.warning(f"Parameter estimation failed: {e}")
         return {'error': str(e)} # type: ignore
 
+# Get default config for edepth model
+default_config = ModelConfig()
+default_config.backbone = BackboneType.VIT_BASE_PATCH16_224.value
+default_config = default_config.to_dict()
+
 # Register the default edepth model
-register_model('edepth', edepth, get_model_config('vit_base_patch16_224'))
+register_model('edepth', edepth, default_config)
 
 # Export main functions
 __all__ = [
