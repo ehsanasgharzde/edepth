@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  edepth-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: cuda-base
+        PYTHON_VERSION: 3.10
+        CUDA_VERSION: 11.8
+        UBUNTU_VERSION: 20.04
+    image: edepth:gpu
+    container_name: edepth-gpu
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - CUDA_VISIBLE_DEVICES=0
+      - TORCH_CUDA_ARCH_LIST=6.0;6.1;7.0;7.5;8.0;8.6+PTX
+    volumes:
+      - ./data:/app/data:ro
+      - ./outputs:/app/outputs
+      - ./logs:/app/logs
+      - ./checkpoints:/app/checkpoints
+      - ./configs:/app/configs:ro
+    ports:
+      - "8501:8501"  # Streamlit dashboard
+    networks:
+      - edepth-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    profiles:
+      - gpu
+
+  edepth-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: cpu-base
+        PYTHON_VERSION: 3.10
+        UBUNTU_VERSION: 20.04
+    image: edepth:cpu
+    container_name: edepth-cpu
+    environment:
+      - CUDA_VISIBLE_DEVICES=""
+      - TORCH_CUDA_ARCH_LIST=""
+    volumes:
+      - ./data:/app/data:ro
+      - ./outputs:/app/outputs
+      - ./logs:/app/logs
+      - ./checkpoints:/app/checkpoints
+      - ./configs:/app/configs:ro
+    ports:
+      - "8502:8501"  # Streamlit dashboard (different port to avoid conflicts)
+    networks:
+      - edepth-network
+    restart: unless-stopped
+    profiles:
+      - cpu
+
+  # Multi-GPU training service
+  edepth-multi-gpu:
+    extends:
+      service: edepth-gpu
+    container_name: edepth-multi-gpu
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0,1,2,3
+    command: python run.py train --distributed --world-size 4
+    profiles:
+      - multi-gpu
+
+  # Development service with volume mounts for code changes
+  edepth-dev:
+    extends:
+      service: edepth-gpu
+    container_name: edepth-dev
+    volumes:
+      - .:/app
+      - ./data:/app/data:ro
+      - ./outputs:/app/outputs
+      - ./logs:/app/logs
+      - ./checkpoints:/app/checkpoints
+    command: tail -f /dev/null  # Keep container running for development
+    profiles:
+      - dev
+
+networks:
+  edepth-network:
+    driver: bridge
+
+volumes:
+  edepth-data:
+    driver: local
+  edepth-outputs:
+    driver: local
+  edepth-logs:
+    driver: local
+  edepth-checkpoints:
+    driver: local
