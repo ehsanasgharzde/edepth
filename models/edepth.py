@@ -1,19 +1,19 @@
-# FILE: models/model_fixed.py
+# FILE: models/edepth.py
 # ehsanasgharzde - COMPLETE DPT MODEL INTEGRATION WITH BACKBONE AND DECODER
 # ehsanasgharzde - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import torch
+import logging
 import torch.nn as nn
 from typing import List, Optional, Dict, Any
-import logging
 
 # Import centralized utilities
 from backbones.backbone import ViT
 from decoders.decoder import DPT
-from configs.config import get_model_config, list_available_models, validate_config 
+from configs.config import ModelConfig, BackboneType, ConfigValidationError
 from utils.model_validation import (
     validate_backbone_name, validate_decoder_channels, validate_model_output, 
-    validate_vit_input, validate_dpt_features, ConfigValidationError
+    validate_vit_input, validate_dpt_features
 )
 from utils.model_operation import (
     get_model_info, ModelInfo, save_model_checkpoint, load_model_checkpoint, 
@@ -36,11 +36,15 @@ class edepth(nn.Module):
         super().__init__()
 
         # Validate backbone name using centralized validation
-        available_models = list_available_models()
+        available_models = [b.value for b in BackboneType]
         validate_backbone_name(backbone_name, available_models, "backbone_name")
 
-        # Get complete model configuration using centralized config
-        self.config = get_model_config(backbone_name)
+        # Create model configuration using the current config system
+        self.config = ModelConfig(
+            backbone=backbone_name,
+            extract_layers=extract_layers if extract_layers is not None else [2, 5, 8, 11],
+            decoder_channels=decoder_channels if decoder_channels is not None else [256, 512, 1024, 1024]
+        ).to_dict()
 
         # Override config with provided parameters
         if extract_layers is not None:
@@ -77,8 +81,8 @@ class edepth(nn.Module):
         self.decoder = DPT(
             backbone_channels=backbone_channels,
             decoder_channels=self.decoder_channels,
-            use_attention=self.config['use_attention'],
-            final_activation=self.config['final_activation']
+            use_attention=self.config.get('use_attention', False),
+            final_activation=self.config.get('final_activation', 'sigmoid')
         )
 
         # Validate feature compatibility
@@ -91,12 +95,17 @@ class edepth(nn.Module):
 
     def validate_complete_config(self) -> None:
         try:
-            # Validate backbone configuration
-            validate_config(self.config, config_type='backbone')
-
-            # Validate decoder configuration  
-            validate_config(self.config, config_type='decoder')
-
+            # Create ModelConfig instance for validation
+            model_config = ModelConfig()
+            
+            # Set values from self.config
+            model_config.backbone = self.config.get('backbone', 'vit_base_patch16_224')
+            model_config.extract_layers = self.config.get('extract_layers', [2, 5, 8, 11])
+            model_config.decoder_channels = self.config.get('decoder_channels', [256, 512, 1024, 1024])
+            
+            # Validate through ModelConfig's validate method
+            model_config.validate()
+            
             # Additional model-specific validations
             validate_decoder_channels(
                 self.config['decoder_channels'],
@@ -143,8 +152,8 @@ class edepth(nn.Module):
             'backbone_name': self.backbone_name,
             'extract_layers': self.extract_layers,
             'decoder_channels': self.decoder_channels,
-            'use_attention': self.config['use_attention'],
-            'final_activation': self.config['final_activation'],
+            'use_attention': self.config.get('use_attention', False),
+            'final_activation': self.config.get('final_activation', 'sigmoid'),
             'backbone_parameters': get_model_info(self.backbone).total_parameters,
             'decoder_parameters': get_model_info(self.decoder).total_parameters
         })
@@ -162,8 +171,8 @@ class edepth(nn.Module):
             backbone_name=self.backbone_name,
             img_size=input_size[0],  # Assume square images
             extract_layers=self.extract_layers,
-            embed_dim=self.config['embed_dim'],
-            patch_size=self.config['patch_size']
+            embed_dim=self.config.get('embed_dim', 768),
+            patch_size=self.config.get('patch_size', 16)
         )
 
     def save_checkpoint(
@@ -217,12 +226,12 @@ class edepth(nn.Module):
     @classmethod
     def from_config(cls, config: Dict[str, Any]) -> 'edepth':
         # Extract parameters from config
-        backbone_name = config.get('backbone_name', 'vit_base_patch16_224')
+        backbone_name = config.get('backbone', 'vit_base_patch16_224')
         extract_layers = config.get('extract_layers')
         decoder_channels = config.get('decoder_channels')
         use_attention = config.get('use_attention', False)
         final_activation = config.get('final_activation', 'sigmoid')
-        use_checkpointing = config.get('use_checkpointing', False)
+        use_checkpointing = config.get('use_gradient_checkpointing', False)
 
         return cls(
             backbone_name=backbone_name,

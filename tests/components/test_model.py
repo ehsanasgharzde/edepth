@@ -14,7 +14,7 @@ from typing import Callable, Dict, Any, List, Tuple
 from models.edepth import edepth
 from models.factory import (
     create_model, get_available_models, ModelBuilder,
-    get_model_info_summary, estimate_model_parameters, validate_model_config,
+    get_model_info_summary, estimate_model_parameters, validate_model_config
 )
 
 # Import centralized utilities
@@ -25,8 +25,7 @@ from utils.model_validation import (
     validate_tensor_input, TensorValidationError, ConfigValidationError
 )
 from configs.config import (
-    get_model_config, get_backbone_config, list_available_models,
-    list_available_backbones
+    ModelConfig, BackboneType, ConfigFactory, ConfigPresets
 )
 
 logger = logging.getLogger(__name__)
@@ -255,19 +254,23 @@ def test_interpolation_functionality() -> None:
 
 def test_config_loading() -> None:
     # Test configuration loading functions
-    available_backbones: List[str] = list_available_backbones()
-    available_models: List[str] = list_available_models()
+    available_backbones: List[str] = [b.value for b in BackboneType]
+    available_models: List[str] = get_available_models()
     
     assert len(available_backbones) > 0, "No available backbones found"
     assert len(available_models) > 0, "No available models found"
     
     # Test getting specific configurations
     for model_name in available_models[:3]:  # Test first 3 models
-        config: Dict[str, Any] = get_model_config(model_name)
-        backbone_config: Dict[str, Any] = get_backbone_config(model_name)
+        # Create a ModelConfig for the model
+        model_config = ModelConfig()
+        model_config.backbone = model_name
+        config = model_config.to_dict()
         
-        assert 'backbone_name' in config, f"Config missing backbone_name for {model_name}"
-        assert 'patch_size' in backbone_config, f"Backbone config missing patch_size for {model_name}"
+        # Check required keys in the generated config
+        assert 'backbone' in config, f"Config missing backbone for {model_name}"
+        assert 'extract_layers' in config, f"Config missing extract_layers for {model_name}"
+        assert 'decoder_channels' in config, f"Config missing decoder_channels for {model_name}"
 
 def test_edge_cases() -> None:
     # Test various edge cases
@@ -400,6 +403,27 @@ def test_model_summary_functionality() -> None:
         for key in expected_keys:
             assert key in summary, f"Model summary missing key: {key}"
 
+def test_config_factory() -> None:
+    # Test the config factory functionality
+    nyu_config = ConfigFactory.create_nyu_config()
+    assert nyu_config.data.dataset_type == 'nyu_depth_v2', "Wrong dataset type in NYU config"
+    assert nyu_config.model.backbone == 'vit_base_patch16_224', "Wrong backbone in NYU config"
+    
+    kitti_config = ConfigFactory.create_kitti_config()
+    assert kitti_config.data.dataset_type == 'kitti', "Wrong dataset type in KITTI config"
+    assert kitti_config.model.backbone == 'vit_base_patch16_384', "Wrong backbone in KITTI config"
+
+def test_config_presets() -> None:
+    # Test the configuration presets
+    small_model_config = ConfigPresets.SMALL_MODEL
+    assert small_model_config['backbone'] == 'vit_small_patch16_224', "Wrong backbone in small model preset"
+    
+    base_model_config = ConfigPresets.BASE_MODEL
+    assert base_model_config['backbone'] == 'vit_base_patch16_224', "Wrong backbone in base model preset"
+    
+    large_model_config = ConfigPresets.LARGE_MODEL
+    assert large_model_config['backbone'] == 'vit_large_patch16_224', "Wrong backbone in large model preset"
+
 def run_comprehensive_test_suite() -> Dict[str, Any]:
     # Comprehensive test suite runner
     test_results: Dict[str, Any] = {
@@ -431,20 +455,22 @@ def run_comprehensive_test_suite() -> Dict[str, Any]:
         test_attention_mechanism,
         test_model_memory_usage,
         test_parameter_estimation,
-        test_model_summary_functionality
+        test_model_summary_functionality,
+        test_config_factory,
+        test_config_presets
     ]
     
     for test_func in test_functions:
         try:
             test_func()
             test_results['tests_passed'] += 1
-            logger.info(f"✓ {test_func.__name__} passed")
+            logger.info(f" {test_func.__name__} passed")
         except Exception as e:
             test_results['tests_failed'] += 1
             test_results['failures'].append({
                 'test': test_func.__name__,
                 'error': str(e)
             })
-            logger.error(f"✗ {test_func.__name__} failed: {e}")
+            logger.error(f" {test_func.__name__} failed: {e}")
     
     return test_results

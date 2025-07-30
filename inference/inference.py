@@ -3,22 +3,27 @@
 # hosseinsolymanzadeh - PROPER COMMENTING
 # ehsanasgharzde, hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
-import torch
-import cv2
-import numpy as np
-from typing import Union, List, Tuple, Optional, Dict, Any
-from pathlib import Path
-import logging
-from torch.cuda.amp import autocast # type: ignore
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import time
 import gc
+import cv2
+import time
+import torch
+import logging
+import numpy as np
 from tqdm import tqdm
+from pathlib import Path
+from torch.cuda.amp import autocast 
+from typing import Union, List, Tuple, Optional, Dict, Any
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from models.factory import create_model, create_model_from_checkpoint
-from configs.config import Config, ConfigFactory, config_manager
+from configs.config import Config, ConfigFactory, InferenceConfig
+from utils.config_loader import create_config_manager
 
 logger = logging.getLogger(__name__)
+
+# Create global config manager instance
+config_manager = create_config_manager()
 
 # Image loading and preprocessing functions
 def load_image_cv2(image_path: Union[str, Path]) -> np.ndarray:
@@ -58,11 +63,14 @@ def preprocess_single_image(
         tensor = torch.from_numpy(image_norm).permute(2, 0, 1).unsqueeze(0)
         
         return tensor, original_size
-        
+
+    except FileNotFoundError:
+        logger.error(f"Image file not found: {image_input}")
+        return torch.zeros((1, 3, *target_size)), (target_size[0], target_size[1])
     except Exception as e:
         logger.error(f"Preprocessing failed for {image_input}: {e}")
-        return torch.zeros((1, 3, *target_size)), (target_size[0], target_size[1])
-
+        return torch.zeros((1, 3, *target_size)), (target_size[0], target_size[1])    
+  
 def preprocess_batch_images(
     images: List[Union[str, Path, np.ndarray]],
     target_size: Tuple[int, int],
@@ -189,7 +197,8 @@ def load_model_for_inference(
     
     # Load configuration
     if config_path:
-        config = config_manager.load_config_from_file(config_path)
+        config_dict = config_manager.load(config_path)
+        config = Config.from_dict(config_dict)
     else:
         config = ConfigFactory.create_nyu_config()
     
@@ -280,16 +289,17 @@ def predict_single_image(
     start_time = time.time()
     
     # Preprocess image
-    mean = np.array(config.data.normalize_mean)
-    std = np.array(config.data.normalize_std)
+    mean = np.array(config.data.augmentation.mean)
+    std = np.array(config.data.augmentation.std)
     
     image_tensor, original_size = preprocess_single_image(
         image_input, config.data.img_size, mean, std
     )
     
     # Apply TTA if enabled
-    if inference_config.tta_enabled:
-        augmented = apply_tta_transforms(image_tensor, inference_config.tta_transforms)
+    if hasattr(inference_config, 'tta_enabled') and inference_config.tta_enabled:
+        tta_transforms = getattr(inference_config, 'tta_transforms', ['horizontal_flip'])
+        augmented = apply_tta_transforms(image_tensor, tta_transforms)
         predictions = []
         
         for aug_input in augmented:
@@ -299,7 +309,7 @@ def predict_single_image(
             )
             predictions.append(pred)
         
-        depth_pred = reverse_tta_transforms(predictions, inference_config.tta_transforms)
+        depth_pred = reverse_tta_transforms(predictions, tta_transforms)
     else:
         depth_pred = run_model_inference(
             model, image_tensor, inference_config.device,
@@ -308,10 +318,11 @@ def predict_single_image(
     
     # Estimate confidence if requested
     confidence = None
-    if inference_config.confidence_estimation:
+    if hasattr(inference_config, 'confidence_estimation') and inference_config.confidence_estimation:
+        monte_carlo_samples = getattr(inference_config, 'monte_carlo_samples', 10)
         _, confidence = estimate_monte_carlo_confidence(
             model, image_tensor, inference_config.device,
-            inference_config.monte_carlo_samples
+            monte_carlo_samples
         )
     
     # Postprocess depth
@@ -339,10 +350,15 @@ def predict_single_image(
         else:
             output_path = output_dir / f"image_{int(time.time())}"
         
-        saved_outputs = save_depth_outputs_cv2(depth, output_path)
+        saved_outputs = save_depth_outputs_cv2(
+            depth, output_path,
+            inference_config.save_raw,
+            inference_config.save_colorized,
+            True  # save_16bit
+        )
         results['saved_outputs'] = saved_outputs
         
-        if confidence is not None and inference_config.save_confidence_maps:
+        if confidence is not None and hasattr(inference_config, 'save_confidence_maps') and inference_config.save_confidence_maps:
             conf_outputs = save_depth_outputs_cv2(conf_map, output_path.with_suffix('_confidence'))
             results['saved_confidence'] = conf_outputs
     
@@ -359,8 +375,10 @@ def predict_batch_images(
     results = []
     batch_size = inference_config.batch_size
     
-    mean = np.array(config.data.normalize_mean)
-    std = np.array(config.data.normalize_std)
+    mean = np.array(config.data.augmentation.mean)
+    std = np.array(config.data.augmentation.std)
+    
+    preprocessing_workers = getattr(inference_config, 'preprocessing_workers', 4)
     
     for i in range(0, len(images), batch_size):
         batch_images = images[i:i + batch_size]
@@ -369,7 +387,7 @@ def predict_batch_images(
         # Preprocess batch
         input_tensor, original_sizes = preprocess_batch_images(
             batch_images, config.data.img_size, mean, std,
-            inference_config.preprocessing_workers
+            preprocessing_workers
         )
         
         # Run inference
@@ -400,7 +418,12 @@ def predict_batch_images(
                 else:
                     output_path = output_dir / f"batch_{i}_image_{j}"
                 
-                saved_outputs = save_depth_outputs_cv2(depth, output_path)
+                saved_outputs = save_depth_outputs_cv2(
+                    depth, output_path,
+                    inference_config.save_raw,
+                    inference_config.save_colorized,
+                    True  # save_16bit
+                )
                 result['saved_outputs'] = saved_outputs
             
             results.append(result)
@@ -426,7 +449,7 @@ def predict_directory(
     config: Config,
     inference_config: InferenceConfig,
     output_dir: Optional[Path] = None,
-    file_extensions: List[str] = None  # type: ignore
+    file_extensions: List[str] = None  
 ) -> Dict[str, Any]:
     if file_extensions is None:
         file_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif']  # type: ignore
@@ -464,7 +487,7 @@ def predict_directory(
 def benchmark_inference(
     model_path: str,
     test_images: List[str],
-    batch_sizes: List[int] = None,  # type: ignore
+    batch_sizes: Optional[List[int]] = None,
     config_path: Optional[str] = None
 ) -> Dict[str, Any]:
     if batch_sizes is None:

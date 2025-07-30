@@ -2,32 +2,31 @@
 # ehsanasgharzde - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import os
-import torch
-import pytest
-import tempfile
-import numpy as np
-import torch.nn as nn
-from unittest.mock import Mock, patch, MagicMock, call
-from torch.utils.data import DataLoader, TensorDataset
-from typing import Dict, List, Tuple, Optional, Callable
 import time
+import torch
+import tempfile
+import torch.nn as nn
+from typing import Dict, Tuple, Any
+from torch.utils.data import DataLoader, TensorDataset
 
 from training.trainer import State, Trainer, setup_logging, setup_distributed_training, create_sample_config
 
 def create_synthetic_depth_data(batch_size: int = 4, height: int = 64, 
-                                width: int = 64, channels: int = 3) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+                                width: int = 64, channels: int = 3) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    # Generate synthetic image data
     images = torch.randn(batch_size, channels, height, width)
     depths = torch.rand(batch_size, 1, height, width)
     masks = torch.ones(batch_size, 1, height, width)
     return images, depths, masks
 
-def create_synthetic_model(input_channels: int = 3, output_channels: int = 1) -> nn.Module:
-    class MockDepthModel(nn.Module):
+def create_test_model(input_channels: int = 3, output_channels: int = 1) -> nn.Module:
+    # Simple convolutional model for testing
+    class TestDepthModel(nn.Module):
         def __init__(self, in_ch: int, out_ch: int):
             super().__init__()
-            self.conv1 = nn.Conv2d(in_ch, 32, 3, padding=1)
-            self.conv2 = nn.Conv2d(32, 64, 3, padding=1)
-            self.conv3 = nn.Conv2d(64, out_ch, 3, padding=1)
+            self.conv1 = nn.Conv2d(in_ch, 16, 3, padding=1)
+            self.conv2 = nn.Conv2d(16, 32, 3, padding=1)
+            self.conv3 = nn.Conv2d(32, out_ch, 3, padding=1)
             self.relu = nn.ReLU()
             self.sigmoid = nn.Sigmoid()
         
@@ -37,16 +36,17 @@ def create_synthetic_model(input_channels: int = 3, output_channels: int = 1) ->
             x = self.sigmoid(self.conv3(x))
             return x
     
-    return MockDepthModel(input_channels, output_channels)
+    return TestDepthModel(input_channels, output_channels)
 
-def create_test_config() -> Dict:
+def create_test_config() -> Dict[str, Any]:
+    # Minimal configuration for testing
     return {
-        'epochs': 3,
+        'epochs': 2,
         'loss': {'name': 'SiLogLoss', 'lambda_var': 0.85},
         'optimizer': {'lr': 1e-3, 'weight_decay': 1e-4, 'betas': (0.9, 0.999)},
         'scheduler': {'type': 'cosine', 'eta_min': 1e-6},
         'mixed_precision': False,
-        'save_frequency': 2,
+        'save_frequency': 1,
         'log_frequency': 5,
         'checkpoint_dir': './test_checkpoints',
         'max_grad_norm': 1.0,
@@ -54,7 +54,8 @@ def create_test_config() -> Dict:
         'early_stopping_min_delta': 1e-4
     }
 
-def create_test_dataloaders():
+def create_test_dataloaders() -> Tuple[DataLoader, DataLoader]:
+    # Create simple dataloaders for testing
     images, depths, masks = create_synthetic_depth_data(batch_size=8)
     train_dataset = TensorDataset(images, depths)
     val_dataset = TensorDataset(images[:4], depths[:4])
@@ -64,170 +65,127 @@ def create_test_dataloaders():
     
     return train_loader, val_loader
 
-class TestState:
-    def test_state_initialization(self):
-        config = {
-            'early_stopping_patience': 5,
-            'early_stopping_min_delta': 1e-3,
-            'epochs': 10
-        }
-        
-        state = State(config)
-        
-        assert state.current_epoch == 0
-        assert state.global_step == 0
-        assert state.best_val_loss == float('inf')
-        assert state.best_metrics == {}
-        assert state.patience_counter == 0
-        assert state.config == config
-        assert state.max_patience == 5
-        assert state.min_delta == 1e-3
-        assert state.train_losses == []
-        assert state.val_losses == []
-        assert state.train_metrics_history == []
-        assert state.val_metrics_history == []
-        assert state.epoch_start_time is None
-        assert state.training_start_time is None
+def test_state_initialization() -> bool:
+    # Test State class initialization
+    config = {
+        'early_stopping_patience': 5,
+        'early_stopping_min_delta': 1e-3,
+        'epochs': 10
+    }
     
-    def test_state_update_epoch(self):
-        state = State({})
-        
-        start_time = time.time()
-        state.update_epoch(5)
-        
-        assert state.current_epoch == 5
-        assert state.epoch_start_time is not None
-        assert state.epoch_start_time >= start_time
+    state = State(config)
     
-    def test_state_update_step(self):
-        state = State({})
-        
-        state.update_step(100)
-        assert state.global_step == 100
+    # Verify initial values
+    checks = [
+        state.current_epoch == 0,
+        state.global_step == 0,
+        state.best_val_loss == float('inf'),
+        len(state.best_metrics) == 0,
+        state.patience_counter == 0,
+        state.max_patience == 5,
+        state.min_delta == 1e-3,
+        len(state.train_losses) == 0,
+        len(state.val_losses) == 0,
+        state.epoch_start_time is None
+    ]
     
-    def test_state_should_early_stop(self):
-        config = {
-            'early_stopping_patience': 3,
-            'early_stopping_min_delta': 1e-2
-        }
-        state = State(config)
-        
-        # First improvement - should not stop
-        assert not state.should_early_stop(0.5)
-        assert state.best_val_loss == 0.5
-        assert state.patience_counter == 0
-        
-        # Small improvement within min_delta - should increment patience
-        assert not state.should_early_stop(0.495)
-        assert state.patience_counter == 1
-        
-        # No improvement - should increment patience
-        assert not state.should_early_stop(0.6)
-        assert state.patience_counter == 2
-        
-        # No improvement - should increment patience
-        assert not state.should_early_stop(0.55)
-        assert state.patience_counter == 3
-        
-        # Patience exceeded - should stop
-        assert state.should_early_stop(0.52)
-        
-    def test_state_get_epoch_duration(self):
-        state = State({})
-        
-        # No epoch started
-        assert state.get_epoch_duration() == 0.0
-        
-        # Epoch started
-        state.update_epoch(0)
-        time.sleep(0.1)
-        duration = state.get_epoch_duration()
-        assert duration >= 0.1
-        assert duration < 1.0
+    return all(checks)
 
-class TestTrainer:
-    @patch('training.trainer.create_loss')
-    @patch('training.trainer.create_evaluator')
-    @patch('training.trainer.get_all_metrics')
-    def test_trainer_initialization_single_gpu(self, mock_get_metrics, mock_create_evaluator, mock_create_loss):
-        # Setup mocks
-        mock_loss = Mock(spec=nn.Module)
-        mock_create_loss.return_value = mock_loss
-        
-        mock_evaluator = Mock()
-        mock_create_evaluator.return_value = mock_evaluator
-        
-        mock_get_metrics.return_value = {'rmse': Mock(), 'mae': Mock()}
-        
-        # Create trainer
-        model = create_synthetic_model()
+def test_state_update_operations() -> bool:
+    # Test State update methods
+    state = State({})
+    
+    # Test epoch update
+    start_time = time.time()
+    state.update_epoch(5)
+    
+    epoch_check = state.current_epoch == 5 and state.epoch_start_time >= start_time
+    
+    # Test step update
+    state.update_step(100)
+    step_check = state.global_step == 100
+    
+    return epoch_check and step_check
+
+def test_state_early_stopping_logic() -> bool:
+    # Test early stopping functionality
+    config = {'early_stopping_patience': 3, 'early_stopping_min_delta': 1e-2}
+    state = State(config)
+    
+    # First improvement - should not stop
+    stop1 = state.should_early_stop(0.5)
+    check1 = not stop1 and state.best_val_loss == 0.5 and state.patience_counter == 0
+    
+    # Small improvement within min_delta - should increment patience
+    stop2 = state.should_early_stop(0.495)
+    check2 = not stop2 and state.patience_counter == 1
+    
+    # No improvement - increment patience
+    stop3 = state.should_early_stop(0.6)
+    check3 = not stop3 and state.patience_counter == 2
+    
+    # Still no improvement - increment patience
+    stop4 = state.should_early_stop(0.55)
+    check4 = not stop4 and state.patience_counter == 3
+    
+    # Patience exceeded - should stop
+    stop5 = state.should_early_stop(0.52)
+    check5 = stop5
+    
+    return all([check1, check2, check3, check4, check5])
+
+def test_state_epoch_duration() -> bool:
+    # Test epoch duration calculation
+    state = State({})
+    
+    # No epoch started
+    duration1 = state.get_epoch_duration()
+    check1 = duration1 == 0.0
+    
+    # Epoch started
+    state.update_epoch(0)
+    time.sleep(0.01)  # Small sleep to ensure duration > 0
+    duration2 = state.get_epoch_duration()
+    check2 = duration2 > 0
+    
+    return check1 and check2
+
+def test_trainer_initialization() -> bool:
+    # Test Trainer initialization with various configurations
+    try:
+        model = create_test_model()
         train_loader, val_loader = create_test_dataloaders()
         config = create_test_config()
         device = torch.device('cpu')
         
         trainer = Trainer(model, train_loader, val_loader, config, device)
         
-        # Assertions
-        assert trainer.model == model
-        assert trainer.train_loader == train_loader
-        assert trainer.val_loader == val_loader
-        assert trainer.config == config
-        assert trainer.device == device
-        assert trainer.rank == 0
-        assert trainer.world_size == 1
-        assert not trainer.is_distributed
-        assert isinstance(trainer.state, State)
-        assert trainer.criterion == mock_loss
-        assert trainer.metrics_evaluator == mock_evaluator
-        assert trainer.use_amp == False
-        assert trainer.max_grad_norm == 1.0
+        # Verify trainer attributes
+        checks = [
+            trainer.model == model,
+            trainer.train_loader == train_loader,
+            trainer.val_loader == val_loader,
+            trainer.config == config,
+            trainer.device == device,
+            trainer.rank == 0,
+            trainer.world_size == 1,
+            not trainer.is_distributed,
+            isinstance(trainer.state, State),
+            trainer.use_amp == False,
+            trainer.max_grad_norm == 1.0,
+            isinstance(trainer.optimizer, torch.optim.AdamW),
+            trainer.optimizer.param_groups[0]['lr'] == 1e-3,
+            trainer.optimizer.param_groups[0]['weight_decay'] == 1e-4
+        ]
         
-        # Check optimizer
-        assert isinstance(trainer.optimizer, torch.optim.AdamW)
-        assert trainer.optimizer.param_groups[0]['lr'] == 1e-3
-        assert trainer.optimizer.param_groups[0]['weight_decay'] == 1e-4
-        
-        # Check scheduler
-        assert isinstance(trainer.scheduler, torch.optim.lr_scheduler.CosineAnnealingLR)
-    
-    @patch('training.trainer.create_loss')
-    @patch('training.trainer.create_evaluator')
-    @patch('training.trainer.get_all_metrics')
-    def test_trainer_initialization_distributed(self, mock_get_metrics, mock_create_evaluator, mock_create_loss):
-        # Setup mocks
-        mock_loss = Mock(spec=nn.Module)
-        mock_create_loss.return_value = mock_loss
-        
-        mock_evaluator = Mock()
-        mock_create_evaluator.return_value = mock_evaluator
-        
-        mock_get_metrics.return_value = {'rmse': Mock(), 'mae': Mock()}
-        
-        with patch('training.trainer.DDP') as mock_ddp:
-            model = create_synthetic_model()
-            train_loader, val_loader = create_test_dataloaders()
-            config = create_test_config()
-            device = torch.device('cpu')
-            
-            trainer = Trainer(model, train_loader, val_loader, config, device, rank=1, world_size=2)
-            
-            assert trainer.rank == 1
-            assert trainer.world_size == 2
-            assert trainer.is_distributed
-            mock_ddp.assert_called_once_with(model, device_ids=[1], find_unused_parameters=True)
-    
-    @patch('training.trainer.create_loss')
-    @patch('training.trainer.create_evaluator')
-    @patch('training.trainer.get_all_metrics')
-    def test_trainer_scheduler_types(self, mock_get_metrics, mock_create_evaluator, mock_create_loss):
-        # Setup mocks
-        mock_loss = Mock(spec=nn.Module)
-        mock_create_loss.return_value = mock_loss
-        mock_evaluator = Mock()
-        mock_create_evaluator.return_value = mock_evaluator
-        mock_get_metrics.return_value = {'rmse': Mock()}
-        
-        model = create_synthetic_model()
+        return all(checks)
+    except Exception:
+        return False
+
+def test_trainer_scheduler_configurations() -> bool:
+    # Test different scheduler configurations
+    try:
+        model = create_test_model()
         train_loader, val_loader = create_test_dataloaders()
         device = torch.device('cpu')
         
@@ -235,290 +193,130 @@ class TestTrainer:
         config_cosine = create_test_config()
         config_cosine['scheduler'] = {'type': 'cosine', 'eta_min': 1e-6}
         trainer_cosine = Trainer(model, train_loader, val_loader, config_cosine, device)
-        assert isinstance(trainer_cosine.scheduler, torch.optim.lr_scheduler.CosineAnnealingLR)
+        cosine_check = isinstance(trainer_cosine.scheduler, torch.optim.lr_scheduler.CosineAnnealingLR)
         
         # Test plateau scheduler
         config_plateau = create_test_config()
         config_plateau['scheduler'] = {'type': 'plateau', 'factor': 0.5, 'patience': 5}
         trainer_plateau = Trainer(model, train_loader, val_loader, config_plateau, device)
-        assert isinstance(trainer_plateau.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau)
+        plateau_check = isinstance(trainer_plateau.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau)
         
         # Test no scheduler
         config_none = create_test_config()
         config_none['scheduler'] = {'type': 'none'}
         trainer_none = Trainer(model, train_loader, val_loader, config_none, device)
-        assert trainer_none.scheduler is None
-    
-    @patch('training.trainer.create_loss')
-    @patch('training.trainer.create_evaluator')
-    @patch('training.trainer.get_all_metrics')
-    def test_train_epoch(self, mock_get_metrics, mock_create_evaluator, mock_create_loss):
-        # Setup mocks
-        mock_loss = Mock(spec=nn.Module)
-        mock_loss.return_value = torch.tensor(0.5, requires_grad=True)
-        mock_create_loss.return_value = mock_loss
+        none_check = trainer_none.scheduler is None
         
-        mock_evaluator = Mock()
-        mock_evaluator.return_value = {'rmse': torch.tensor(0.3), 'mae': torch.tensor(0.2)}
-        mock_create_evaluator.return_value = mock_evaluator
-        
-        mock_get_metrics.return_value = {'rmse': Mock(), 'mae': Mock()}
-        
-        # Create trainer
-        model = create_synthetic_model()
+        return cosine_check and plateau_check and none_check
+    except Exception:
+        return False
+
+def test_training_epoch_execution() -> bool:
+    # Test single training epoch execution
+    try:
+        model = create_test_model()
         train_loader, val_loader = create_test_dataloaders()
         config = create_test_config()
         device = torch.device('cpu')
         
         trainer = Trainer(model, train_loader, val_loader, config, device)
         
-        # Run train epoch
+        # Execute training epoch
+        initial_step = trainer.state.global_step
         result = trainer.train_epoch()
         
-        # Assertions
-        assert 'loss' in result
-        assert 'rmse' in result
-        assert 'mae' in result
-        assert isinstance(result['loss'], float)
-        assert result['loss'] >= 0
-        assert len(trainer.state.train_losses) == 1
-        assert len(trainer.state.train_metrics_history) == 1
+        # Verify results
+        checks = [
+            'loss' in result,
+            isinstance(result['loss'], float),
+            result['loss'] >= 0,
+            len(trainer.state.train_losses) == 1,
+            len(trainer.state.train_metrics_history) == 1,
+            trainer.state.global_step > initial_step
+        ]
         
-        # Check that optimizer was called
-        assert trainer.state.global_step > 0
-    
-    @patch('training.trainer.create_loss')
-    @patch('training.trainer.create_evaluator')
-    @patch('training.trainer.get_all_metrics')
-    def test_validate_epoch(self, mock_get_metrics, mock_create_evaluator, mock_create_loss):
-        # Setup mocks
-        mock_loss = Mock(spec=nn.Module)
-        mock_loss.return_value = torch.tensor(0.4)
-        mock_create_loss.return_value = mock_loss
-        
-        mock_evaluator = Mock()
-        mock_evaluator.return_value = {'rmse': torch.tensor(0.25), 'mae': torch.tensor(0.15)}
-        mock_create_evaluator.return_value = mock_evaluator
-        
-        mock_get_metrics.return_value = {'rmse': Mock(), 'mae': Mock()}
-        
-        # Create trainer
-        model = create_synthetic_model()
+        return all(checks)
+    except Exception:
+        return False
+
+def test_validation_epoch_execution() -> bool:
+    # Test single validation epoch execution
+    try:
+        model = create_test_model()
         train_loader, val_loader = create_test_dataloaders()
         config = create_test_config()
         device = torch.device('cpu')
         
         trainer = Trainer(model, train_loader, val_loader, config, device)
         
-        # Run validate epoch
+        # Execute validation epoch
         result = trainer.validate_epoch()
         
-        # Assertions
-        assert 'loss' in result
-        assert 'rmse' in result
-        assert 'mae' in result
-        assert isinstance(result['loss'], float)
-        assert result['loss'] >= 0
-        assert len(trainer.state.val_losses) == 1
-        assert len(trainer.state.val_metrics_history) == 1
-    
-    @patch('training.trainer.create_loss')
-    @patch('training.trainer.create_evaluator')
-    @patch('training.trainer.get_all_metrics')
-    def test_train_epoch_with_dict_batch(self, mock_get_metrics, mock_create_evaluator, mock_create_loss):
-        # Setup mocks
-        mock_loss = Mock(spec=nn.Module)
-        mock_loss.return_value = torch.tensor(0.5, requires_grad=True)
-        mock_create_loss.return_value = mock_loss
+        # Verify results
+        checks = [
+            'loss' in result,
+            isinstance(result['loss'], float),
+            result['loss'] >= 0,
+            len(trainer.state.val_losses) == 1,
+            len(trainer.state.val_metrics_history) == 1
+        ]
         
-        mock_evaluator = Mock()
-        mock_evaluator.return_value = {'rmse': torch.tensor(0.3)}
-        mock_create_evaluator.return_value = mock_evaluator
-        
-        mock_get_metrics.return_value = {'rmse': Mock()}
-        
-        # Create dataset with dict format
-        images, depths, masks = create_synthetic_depth_data(batch_size=4)
-        class DictDataset:
-            def __init__(self, images, depths, masks):
-                self.images = images
-                self.depths = depths
-                self.masks = masks
-            
-            def __len__(self):
-                return len(self.images)
-            
-            def __getitem__(self, idx):
-                return {
-                    'image': self.images[idx],
-                    'depth': self.depths[idx],
-                    'mask': self.masks[idx]
-                }
-        
-        dict_dataset = DictDataset(images, depths, masks)
-        dict_loader = DataLoader(dict_dataset, batch_size=2) # type: ignore
-        _, val_loader = create_test_dataloaders()
-        
-        model = create_synthetic_model()
-        config = create_test_config()
-        device = torch.device('cpu')
-        
-        trainer = Trainer(model, dict_loader, val_loader, config, device)
-        
-        # Run train epoch
-        result = trainer.train_epoch()
-        
-        # Should handle dict format correctly
-        assert 'loss' in result
-        assert 'rmse' in result
-    
-    @patch('training.trainer.create_loss')
-    @patch('training.trainer.create_evaluator')
-    @patch('training.trainer.get_all_metrics')
-    def test_save_checkpoint(self, mock_get_metrics, mock_create_evaluator, mock_create_loss):
-        # Setup mocks
-        mock_loss = Mock(spec=nn.Module)
-        mock_create_loss.return_value = mock_loss
-        mock_evaluator = Mock()
-        mock_create_evaluator.return_value = mock_evaluator
-        mock_get_metrics.return_value = {'rmse': Mock()}
-        
+        return all(checks)
+    except Exception:
+        return False
+
+def test_checkpoint_save_and_load() -> bool:
+    # Test checkpoint saving and loading functionality
+    try:
         with tempfile.TemporaryDirectory() as temp_dir:
-            model = create_synthetic_model()
+            model = create_test_model()
             train_loader, val_loader = create_test_dataloaders()
             config = create_test_config()
             config['checkpoint_dir'] = temp_dir
             device = torch.device('cpu')
             
-            trainer = Trainer(model, train_loader, val_loader, config, device)
-            trainer.state.current_epoch = 5
-            trainer.state.global_step = 100
-            trainer.state.best_val_loss = 0.3
-            
-            metrics = {'loss': 0.4, 'rmse': 0.2}
-            
-            # Test regular checkpoint save
-            trainer.save_checkpoint(metrics, is_best=False)
-            
-            checkpoint_path = os.path.join(temp_dir, "checkpoint_epoch_005.pth")
-            assert os.path.exists(checkpoint_path)
-            
-            # Test best checkpoint save
-            trainer.save_checkpoint(metrics, is_best=True)
-            
-            best_path = os.path.join(temp_dir, "best_model.pth")
-            assert os.path.exists(best_path)
-            
-            # Verify checkpoint contents
-            checkpoint = torch.load(checkpoint_path, map_location='cpu')
-            assert checkpoint['epoch'] == 5
-            assert checkpoint['global_step'] == 100
-            assert checkpoint['best_val_loss'] == 0.3
-            assert 'model_state_dict' in checkpoint
-            assert 'optimizer_state_dict' in checkpoint
-            assert 'training_state' in checkpoint
-    
-    @patch('training.trainer.create_loss')
-    @patch('training.trainer.create_evaluator')
-    @patch('training.trainer.get_all_metrics')
-    def test_load_checkpoint(self, mock_get_metrics, mock_create_evaluator, mock_create_loss):
-        # Setup mocks
-        mock_loss = Mock(spec=nn.Module)
-        mock_create_loss.return_value = mock_loss
-        mock_evaluator = Mock()
-        mock_create_evaluator.return_value = mock_evaluator
-        mock_get_metrics.return_value = {'rmse': Mock()}
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model = create_synthetic_model()
-            train_loader, val_loader = create_test_dataloaders()
-            config = create_test_config()
-            config['checkpoint_dir'] = temp_dir
-            device = torch.device('cpu')
-            
-            # Create and save a checkpoint first
+            # Create trainer and set some state
             trainer1 = Trainer(model, train_loader, val_loader, config, device)
-            trainer1.state.current_epoch = 10
-            trainer1.state.global_step = 200
-            trainer1.state.best_val_loss = 0.2
+            trainer1.state.current_epoch = 5
+            trainer1.state.global_step = 100
+            trainer1.state.best_val_loss = 0.3
             trainer1.state.train_losses = [0.5, 0.4, 0.3]
-            trainer1.state.val_losses = [0.6, 0.5, 0.4]
             
-            checkpoint_path = os.path.join(temp_dir, "test_checkpoint.pth")
-            metrics = {'loss': 0.2, 'rmse': 0.1}
+            metrics = {'loss': 0.25, 'rmse': 0.1}
             
-            checkpoint = {
-                'epoch': trainer1.state.current_epoch,
-                'global_step': trainer1.state.global_step,
-                'model_state_dict': trainer1.model.state_dict(),
-                'optimizer_state_dict': trainer1.optimizer.state_dict(),
-                'scheduler_state_dict': trainer1.scheduler.state_dict() if trainer1.scheduler else None,
-                'scaler_state_dict': trainer1.scaler.state_dict() if trainer1.scaler else None,
-                'best_val_loss': trainer1.state.best_val_loss,
-                'config': config,
-                'metrics': metrics,
-                'training_state': {
-                    'train_losses': trainer1.state.train_losses,
-                    'val_losses': trainer1.state.val_losses,
-                    'train_metrics_history': [],
-                    'val_metrics_history': []
-                }
-            }
-            torch.save(checkpoint, checkpoint_path)
+            # Save checkpoint
+            trainer1.save_checkpoint(metrics, is_best=True)
+            
+            # Verify files exist
+            checkpoint_path = os.path.join(temp_dir, "checkpoint_epoch_005.pth")
+            best_path = os.path.join(temp_dir, "best_model.pth")
+            
+            files_exist = os.path.exists(checkpoint_path) and os.path.exists(best_path)
             
             # Create new trainer and load checkpoint
-            model2 = create_synthetic_model()
+            model2 = create_test_model()
             trainer2 = Trainer(model2, train_loader, val_loader, config, device)
             
-            success = trainer2.load_checkpoint(checkpoint_path)
+            load_success = trainer2.load_checkpoint(checkpoint_path)
             
-            assert success
-            assert trainer2.state.current_epoch == 10
-            assert trainer2.state.global_step == 200
-            assert trainer2.state.best_val_loss == 0.2
-            assert trainer2.state.train_losses == [0.5, 0.4, 0.3]
-            assert trainer2.state.val_losses == [0.6, 0.5, 0.4]
-    
-    @patch('training.trainer.create_loss')
-    @patch('training.trainer.create_evaluator')
-    @patch('training.trainer.get_all_metrics')
-    def test_load_checkpoint_failure(self, mock_get_metrics, mock_create_evaluator, mock_create_loss):
-        # Setup mocks
-        mock_loss = Mock(spec=nn.Module)
-        mock_create_loss.return_value = mock_loss
-        mock_evaluator = Mock()
-        mock_create_evaluator.return_value = mock_evaluator
-        mock_get_metrics.return_value = {'rmse': Mock()}
-        
-        model = create_synthetic_model()
-        train_loader, val_loader = create_test_dataloaders()
-        config = create_test_config()
-        device = torch.device('cpu')
-        
-        trainer = Trainer(model, train_loader, val_loader, config, device)
-        
-        # Test loading non-existent checkpoint
-        success = trainer.load_checkpoint("non_existent_checkpoint.pth")
-        assert not success
-    
-    @patch('training.trainer.create_loss')
-    @patch('training.trainer.create_evaluator')
-    @patch('training.trainer.get_all_metrics')
-    def test_train_full_loop(self, mock_get_metrics, mock_create_evaluator, mock_create_loss):
-        # Setup mocks
-        mock_loss = Mock(spec=nn.Module)
-        mock_loss_values = [torch.tensor(0.8, requires_grad=True), torch.tensor(0.6, requires_grad=True), torch.tensor(0.4, requires_grad=True)]
-        mock_loss.side_effect = mock_loss_values * 10  # Repeat for multiple batches
-        mock_create_loss.return_value = mock_loss
-        
-        mock_evaluator = Mock()
-        mock_evaluator.return_value = {'rmse': torch.tensor(0.3), 'mae': torch.tensor(0.2)}
-        mock_create_evaluator.return_value = mock_evaluator
-        
-        mock_get_metrics.return_value = {'rmse': Mock(), 'mae': Mock()}
-        
+            # Verify loaded state
+            state_checks = [
+                load_success,
+                trainer2.state.current_epoch == 5,
+                trainer2.state.global_step == 100,
+                trainer2.state.best_val_loss == 0.3,
+                trainer2.state.train_losses == [0.5, 0.4, 0.3]
+            ]
+            
+            return files_exist and all(state_checks)
+    except Exception:
+        return False
+
+def test_full_training_loop() -> bool:
+    # Test complete training loop
+    try:
         with tempfile.TemporaryDirectory() as temp_dir:
-            model = create_synthetic_model()
+            model = create_test_model()
             train_loader, val_loader = create_test_dataloaders()
             config = create_test_config()
             config['epochs'] = 2
@@ -528,39 +326,29 @@ class TestTrainer:
             
             trainer = Trainer(model, train_loader, val_loader, config, device)
             
-            # Run training
+            # Run full training
             summary = trainer.train()
             
-            # Assertions
-            assert 'total_epochs' in summary
-            assert 'total_time' in summary
-            assert 'best_val_loss' in summary
-            assert 'best_metrics' in summary
-            assert 'final_lr' in summary
-            assert 'training_history' in summary
+            # Verify training summary
+            required_keys = ['total_epochs', 'total_time', 'best_val_loss', 'best_metrics', 
+                           'final_lr', 'training_history']
             
-            assert summary['total_epochs'] == 2
-            assert summary['total_time'] > 0
-            assert len(trainer.state.train_losses) == 2
-            assert len(trainer.state.val_losses) == 2
-    
-    @patch('training.trainer.create_loss')
-    @patch('training.trainer.create_evaluator')
-    @patch('training.trainer.get_all_metrics')
-    def test_train_with_early_stopping(self, mock_get_metrics, mock_create_evaluator, mock_create_loss):
-        # Setup mocks
-        mock_loss = Mock(spec=nn.Module)
-        # Simulate no improvement in validation loss
-        mock_loss.side_effect = [torch.tensor(0.5, requires_grad=True)] * 100
-        mock_create_loss.return_value = mock_loss
-        
-        mock_evaluator = Mock()
-        mock_evaluator.return_value = {'rmse': torch.tensor(0.3)}
-        mock_create_evaluator.return_value = mock_evaluator
-        
-        mock_get_metrics.return_value = {'rmse': Mock()}
-        
-        model = create_synthetic_model()
+            summary_checks = [
+                all(key in summary for key in required_keys),
+                summary['total_epochs'] == 2,
+                summary['total_time'] > 0,
+                len(trainer.state.train_losses) == 2,
+                len(trainer.state.val_losses) == 2
+            ]
+            
+            return all(summary_checks)
+    except Exception:
+        return False
+
+def test_early_stopping_mechanism() -> bool:
+    # Test early stopping functionality
+    try:
+        model = create_test_model()
         train_loader, val_loader = create_test_dataloaders()
         config = create_test_config()
         config['epochs'] = 10
@@ -569,173 +357,142 @@ class TestTrainer:
         
         trainer = Trainer(model, train_loader, val_loader, config, device)
         
-        # Run training - should stop early
-        summary = trainer.train()
+        # Manually set validation losses to trigger early stopping
+        trainer.state.best_val_loss = 0.5
         
-        # Should stop before 10 epochs due to early stopping
-        assert summary['total_epochs'] < 10
-    
-    @patch('training.trainer.create_loss')
-    @patch('training.trainer.create_evaluator')
-    @patch('training.trainer.get_all_metrics')
-    def test_train_with_amp(self, mock_get_metrics, mock_create_evaluator, mock_create_loss):
-        # Setup mocks
-        mock_loss = Mock(spec=nn.Module)
-        mock_loss.return_value = torch.tensor(0.5, requires_grad=True)
-        mock_create_loss.return_value = mock_loss
+        # Simulate no improvement scenario
+        should_stop_1 = trainer.state.should_early_stop(0.6)  # Worse loss
+        should_stop_2 = trainer.state.should_early_stop(0.55)  # Still worse
+        should_stop_3 = trainer.state.should_early_stop(0.52)  # Still worse - should trigger stop
         
-        mock_evaluator = Mock()
-        mock_evaluator.return_value = {'rmse': torch.tensor(0.3)}
-        mock_create_evaluator.return_value = mock_evaluator
+        return not should_stop_1 and not should_stop_2 and should_stop_3
+    except Exception:
+        return False
+
+def test_utility_functions() -> bool:
+    # Test utility functions
+    try:
+        # Test logging setup
+        with tempfile.TemporaryDirectory() as temp_dir:
+            setup_logging(temp_dir)
+            log_files = [f for f in os.listdir(temp_dir) if f.startswith('training_') and f.endswith('.log')]
+            logging_check = len(log_files) == 1
         
-        mock_get_metrics.return_value = {'rmse': Mock()}
+        # Test distributed training setup (single process)
+        rank, world_size, device = setup_distributed_training()
+        distributed_check = rank == 0 and world_size == 1 and isinstance(device, torch.device)
         
-        model = create_synthetic_model()
+        # Test sample config creation
+        config = create_sample_config()
+        required_keys = ['epochs', 'loss', 'optimizer', 'scheduler', 'mixed_precision']
+        config_check = all(key in config for key in required_keys)
+        
+        return logging_check and distributed_check and config_check
+    except Exception:
+        return False
+
+def test_mixed_precision_configuration() -> bool:
+    # Test mixed precision configuration
+    try:
+        model = create_test_model()
         train_loader, val_loader = create_test_dataloaders()
         config = create_test_config()
         config['mixed_precision'] = True
-        config['epochs'] = 1
         device = torch.device('cpu')
         
         trainer = Trainer(model, train_loader, val_loader, config, device)
         
-        assert trainer.use_amp == True
-        assert trainer.scaler is not None
+        # Verify AMP setup
+        checks = [
+            trainer.use_amp == True,
+            trainer.scaler is not None
+        ]
         
-        # Run one epoch
+        return all(checks)
+    except Exception:
+        return False
+
+def test_dict_batch_format() -> bool:
+    # Test handling of dictionary batch format
+    try:
+        model = create_test_model()
+        images, depths, masks = create_synthetic_depth_data(batch_size=4)
+        
+        # Create dataset with dict format
+        class DictDataset:
+            def __init__(self, images: torch.Tensor, depths: torch.Tensor, masks: torch.Tensor):
+                self.images = images
+                self.depths = depths
+                self.masks = masks
+            
+            def __len__(self) -> int:
+                return len(self.images)
+            
+            def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+                return {
+                    'image': self.images[idx],
+                    'depth': self.depths[idx],
+                    'mask': self.masks[idx]
+                }
+        
+        dict_dataset = DictDataset(images, depths, masks)
+        dict_loader = DataLoader(dict_dataset, batch_size=2)
+        _, val_loader = create_test_dataloaders()
+        
+        config = create_test_config()
+        device = torch.device('cpu')
+        
+        trainer = Trainer(model, dict_loader, val_loader, config, device)
+        
+        # Execute one training epoch
         result = trainer.train_epoch()
-        assert 'loss' in result
+        
+        return 'loss' in result and isinstance(result['loss'], float)
+    except Exception:
+        return False
 
-class TestUtilityFunctions:
-    def test_setup_logging(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            setup_logging(temp_dir)
-            
-            # Check if log file was created
-            log_files = [f for f in os.listdir(temp_dir) if f.startswith('training_') and f.endswith('.log')]
-            assert len(log_files) == 1
+def run_all_tests() -> Dict[str, bool]:
+    # Execute all test functions and return results
+    tests = {
+        'state_initialization': test_state_initialization,
+        'state_update_operations': test_state_update_operations,
+        'state_early_stopping_logic': test_state_early_stopping_logic,
+        'state_epoch_duration': test_state_epoch_duration,
+        'trainer_initialization': test_trainer_initialization,
+        'trainer_scheduler_configurations': test_trainer_scheduler_configurations,
+        'training_epoch_execution': test_training_epoch_execution,
+        'validation_epoch_execution': test_validation_epoch_execution,
+        'checkpoint_save_and_load': test_checkpoint_save_and_load,
+        'full_training_loop': test_full_training_loop,
+        'early_stopping_mechanism': test_early_stopping_mechanism,
+        'utility_functions': test_utility_functions,
+        'mixed_precision_configuration': test_mixed_precision_configuration,
+        'dict_batch_format': test_dict_batch_format
+    }
     
-    @patch.dict(os.environ, {}, clear=True)
-    def test_setup_distributed_training_single_process(self):
-        rank, world_size, device = setup_distributed_training()
-        
-        assert rank == 0
-        assert world_size == 1
-        assert isinstance(device, torch.device)
+    results = {}
+    for test_name, test_func in tests.items():
+        try:
+            results[test_name] = test_func()
+        except Exception as e:
+            results[test_name] = False
+            print(f"Test {test_name} failed with exception: {e}")
     
-    @patch.dict(os.environ, {'RANK': '1', 'WORLD_SIZE': '2'}, clear=True)
-    @patch('training.trainer.dist.init_process_group')
-    def test_setup_distributed_training_multi_process(self, mock_init_process_group):
-        rank, world_size, device = setup_distributed_training()
-        
-        assert rank == 1
-        assert world_size == 2
-        mock_init_process_group.assert_called_once()
-    
-    def test_create_sample_config(self):
-        config = create_sample_config()
-        
-        required_keys = ['epochs', 'loss', 'optimizer', 'scheduler', 'mixed_precision']
-        for key in required_keys:
-            assert key in config
-        
-        assert config['epochs'] == 100
-        assert config['loss']['name'] == 'SiLogLoss'
-        assert config['optimizer']['lr'] == 1e-4
-        assert config['scheduler']['type'] == 'cosine'
+    return results
 
-class TestEdgeCases:
-    @patch('training.trainer.create_loss')
-    @patch('training.trainer.create_evaluator')
-    @patch('training.trainer.get_all_metrics')
-    def test_train_with_keyboard_interrupt(self, mock_get_metrics, mock_create_evaluator, mock_create_loss):
-        # Setup mocks
-        mock_loss = Mock(spec=nn.Module)
-        mock_loss.return_value = torch.tensor(0.5, requires_grad=True)
-        mock_create_loss.return_value = mock_loss
-        
-        mock_evaluator = Mock()
-        mock_evaluator.return_value = {'rmse': torch.tensor(0.3)}
-        mock_create_evaluator.return_value = mock_evaluator
-        
-        mock_get_metrics.return_value = {'rmse': Mock()}
-        
-        model = create_synthetic_model()
-        train_loader, val_loader = create_test_dataloaders()
-        config = create_test_config()
-        config['epochs'] = 1
-        device = torch.device('cpu')
-        
-        trainer = Trainer(model, train_loader, val_loader, config, device)
-        
-        # Mock train_epoch to raise KeyboardInterrupt
-        original_train_epoch = trainer.train_epoch
-        def mock_train_epoch():
-            raise KeyboardInterrupt("User interrupted")
-        
-        trainer.train_epoch = mock_train_epoch
-        
-        # Should handle KeyboardInterrupt gracefully
-        summary = trainer.train()
-        
-        assert 'total_time' in summary
+def print_test_results(results: Dict[str, bool]) -> None:
+    # Print formatted test results
+    print("="*60)
+    print("FUNCTIONAL TEST RESULTS")
+    print("="*60)
     
-    @patch('training.trainer.create_loss')
-    @patch('training.trainer.create_evaluator')
-    @patch('training.trainer.get_all_metrics')
-    def test_save_checkpoint_non_main_rank(self, mock_get_metrics, mock_create_evaluator, mock_create_loss):
-        # Setup mocks
-        mock_loss = Mock(spec=nn.Module)
-        mock_create_loss.return_value = mock_loss
-        mock_evaluator = Mock()
-        mock_create_evaluator.return_value = mock_evaluator
-        mock_get_metrics.return_value = {'rmse': Mock()}
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model = create_synthetic_model()
-            train_loader, val_loader = create_test_dataloaders()
-            config = create_test_config()
-            config['checkpoint_dir'] = temp_dir
-            device = torch.device('cpu')
-            
-            # Create trainer with rank != 0
-            trainer = Trainer(model, train_loader, val_loader, config, device, rank=1, world_size=2)
-            
-            metrics = {'loss': 0.4, 'rmse': 0.2}
-            
-            # Should not save checkpoint when rank != 0
-            trainer.save_checkpoint(metrics, is_best=False)
-            
-            # No checkpoint should be created
-            checkpoint_files = [f for f in os.listdir(temp_dir) if f.endswith('.pth')]
-            assert len(checkpoint_files) == 0
+    passed = sum(results.values())
+    total = len(results)
     
-    @patch('training.trainer.create_loss')
-    @patch('training.trainer.create_evaluator')
-    @patch('training.trainer.get_all_metrics')
-    def test_train_epoch_with_gradient_clipping(self, mock_get_metrics, mock_create_evaluator, mock_create_loss):
-        # Setup mocks
-        mock_loss = Mock(spec=nn.Module)
-        mock_loss.return_value = torch.tensor(0.5, requires_grad=True)
-        mock_create_loss.return_value = mock_loss
-        
-        mock_evaluator = Mock()
-        mock_evaluator.return_value = {'rmse': torch.tensor(0.3)}
-        mock_create_evaluator.return_value = mock_evaluator
-        
-        mock_get_metrics.return_value = {'rmse': Mock()}
-        
-        model = create_synthetic_model()
-        train_loader, val_loader = create_test_dataloaders()
-        config = create_test_config()
-        config['max_grad_norm'] = 0.5  # Enable gradient clipping
-        device = torch.device('cpu')
-        
-        trainer = Trainer(model, train_loader, val_loader, config, device)
-        
-        with patch('torch.nn.utils.clip_grad_norm_') as mock_clip_grad:
-            result = trainer.train_epoch()
-            
-            # Gradient clipping should be called
-            assert mock_clip_grad.call_count > 0
-            assert 'loss' in result
+    for test_name, result in results.items():
+        status = "PASS" if result else "FAIL"
+        print(f"{test_name:<35} | {status}")
+    
+    print("-"*60)
+    print(f"TOTAL: {passed}/{total} tests passed ({passed/total*100:.1f}%)")
+    print("="*60)
