@@ -2,7 +2,6 @@
 # ehsanasgharzde, hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import cv2
-import logging
 import hashlib
 import threading
 import numpy as np
@@ -16,7 +15,10 @@ from albumentations.pytorch import ToTensorV2
 import torch
 import random
 
-logger = logging.getLogger(__name__)
+from logger.logger import setup_logging 
+
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 class BaseDataset(Dataset):
     def __init__(self, data_root: str, split: str = 'train', img_size: Tuple[int, int] = (480, 640),

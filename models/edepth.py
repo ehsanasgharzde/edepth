@@ -3,7 +3,6 @@
 # ehsanasgharzde - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import torch
-import logging
 import torch.nn as nn
 from typing import List, Optional, Dict, Any
 
@@ -19,8 +18,10 @@ from utils.model_operation import (
     get_model_info, ModelInfo, save_model_checkpoint, load_model_checkpoint, 
     calculate_feature_shapes, validate_feature_compatibility, print_model_summary
 )
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 class edepth(nn.Module):
     def __init__(

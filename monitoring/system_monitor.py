@@ -3,7 +3,6 @@
 
 import psutil
 import threading
-import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional, Callable
 from collections import deque
@@ -22,7 +21,10 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-logger = logging.getLogger(__name__)
+from logger.logger import setup_logging 
+
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 @dataclass
 class SystemMetrics:

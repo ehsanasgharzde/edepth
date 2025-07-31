@@ -4,7 +4,6 @@
 import torch
 import torch.nn as nn
 import time
-import logging
 from typing import Dict, Any, Optional, Callable
 from contextlib import contextmanager
 from functools import wraps
@@ -12,8 +11,10 @@ from functools import wraps
 from model_monitor import ModelPerformanceMonitor
 from system_monitor import SystemResourceMonitor
 from configs.config import MonitoringConfig
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 class ModelMonitoringIntegration:
     def __init__(self, config: Optional[MonitoringConfig] = None):
@@ -57,7 +58,6 @@ class ModelMonitoringIntegration:
         logger.info("Model monitoring integration stopped")
 
     def register_model(self, model: nn.Module, name: str) -> None:
-        """Register a model for monitoring"""
         if self.config.enable_model_monitoring:
             self.model_monitor.register_model(model, name)
 

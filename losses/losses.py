@@ -5,12 +5,13 @@
 
 import torch
 from typing import Optional
-import logging
 
 from utils.base_losses import *
 from utils.tensor_validation import *
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 class SiLogLoss(DepthLoss):
     def __init__(self, lambda_var: float = 0.85, eps: float = 1e-7, **kwargs):

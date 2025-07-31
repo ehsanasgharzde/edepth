@@ -2,11 +2,13 @@
 # ehsanasgharzde - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import torch
-import logging
 import torch.nn.functional as F
 from typing import Optional, Tuple, Dict, Any
 
-logger = logging.getLogger(__name__)
+from logger.logger import setup_logging 
+
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 # Configuration constants
 EPS = 1e-6

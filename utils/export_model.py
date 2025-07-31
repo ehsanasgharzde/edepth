@@ -5,7 +5,6 @@
 
 import os
 import time
-import logging
 import traceback
 from typing import Optional, Tuple, Any, Dict, List
 from enum import Enum
@@ -16,8 +15,10 @@ import torch.jit
 import torch.quantization
 
 from models.factory import create_model, create_model_from_checkpoint
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 # Optional imports for different export formats
 try:

@@ -7,17 +7,15 @@ import sys
 import time
 import json
 import yaml
-import logging
 import argparse
 import traceback
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
-import signal
 import psutil
 import platform
-
+import logging
 import torch
 import torch.nn as nn
 import torch.distributed as dist
@@ -39,9 +37,10 @@ from inference.inference import InferenceEngine, load_image_cv2 # type: ignore
 from monitoring.model_integration import ModelMonitoringIntegration
 from monitoring.streamlit_dashboard import run_dashboard # type: ignore
 from tests.test import ComponentTestDiscovery, TestExecutor, signal_handler  # type: ignore
+from logger.logger import setup_logging 
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 class DepthEstimationCLI:
     def __init__(self):
@@ -673,28 +672,35 @@ class DepthEstimationCLI:
                 monitoring.stop_monitoring()
                 
     def test(self, args):
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
+        start_time = time.time()
+        output_dir = args.output_dir
+        os.makedirs(output_dir, exist_ok=True)
+    
+        include_patterns = ["test_*.py"]
+        exclude_patterns = ["*_helper.py", "*_utilities.py"]
+        component_dirs = ["models", "datasets", "training", "utils"]
+    
+        from tests.test import discover_pytest_tests, run_pytest_tests, print_summary  # Import required functions
         
-        config = TestConfig(
-            test_directory=args.test_dir,
-            output_directory=args.output_dir,
-            parallel_workers=args.workers,
-            timeout=args.timeout,
-            coverage_enabled=not args.no_coverage,
-            fail_fast=args.fail_fast
+        test_files = discover_pytest_tests(args.test_dir, include_patterns, exclude_patterns, component_dirs)
+        
+        if args.test_file:
+            test_files = [f for f in test_files if args.test_file in str(f)]
+    
+        if args.component:
+            test_files = [f for f in test_files if args.component in str(f)]
+    
+        test_results = run_pytest_tests(
+            test_files, 
+            output_dir, 
+            parallel=args.workers, 
+            timeout=args.timeout, 
+            coverage=not args.no_coverage
         )
         
-        discovery = ComponentTestDiscovery(config)
-        executor = TestExecutor(config)
+        print_summary(test_results, start_time)
         
-        test_files = discovery.discover_tests()
-        if not any(test_files.values()):
-            logger.error("No test files discovered")
-            return 1
-            
-        results = executor.run_all_tests(test_files)
-        failed_tests = sum(1 for r in results if r.status in ["FAILED", "ERROR", "TIMEOUT"])
+        failed_tests = sum(1 for group in test_results for test in group.get('tests', []) if test['status'] in ["failed", "error"])
         
         if failed_tests > 0:
             logger.error(f"Test execution completed with {failed_tests} failures")
@@ -702,7 +708,7 @@ class DepthEstimationCLI:
         else:
             logger.info("All tests passed successfully")
             return 0
-            
+                    
     def config_ops(self, args):
         if args.config_command == 'validate':
             try:
@@ -935,11 +941,14 @@ class DepthEstimationCLI:
         
         test_parser = subparsers.add_parser('test', help='Run tests')
         test_parser.add_argument('--test-dir', type=str, default='tests', help='Test directory')
+        test_parser.add_argument('--output-dir', type=str, default='test_results', help='Output directory for test results')
         test_parser.add_argument('--workers', type=int, default=4, help='Number of workers')
         test_parser.add_argument('--timeout', type=int, default=300, help='Test timeout')
-        test_parser.add_argument('--no-coverage', action='store_true', help='Disable coverage')
+        test_parser.add_argument('--coverage', action='store_true', help='Enable coverage')
         test_parser.add_argument('--fail-fast', action='store_true', help='Stop on first failure')
-        
+        test_parser.add_argument('--test-file', type=str, help='Run only a specific test file')
+        test_parser.add_argument('--component', type=str, help='Run only a specific component')
+
         config_parser = subparsers.add_parser('config', help='Configuration operations')
         config_subparsers = config_parser.add_subparsers(dest='config_command')
         

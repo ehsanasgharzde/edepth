@@ -4,7 +4,6 @@
 
 import timm
 import torch
-import logging
 import torch.nn as nn
 import torch.utils.checkpoint as checkpoint
 from typing import List, Optional, Dict, Any
@@ -19,8 +18,10 @@ from utils.model_operation import (
     calculate_patch_grid, sequence_to_spatial, interpolate_features,
     cleanup_hooks, apply_gradient_checkpointing
 ) 
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 # Utility functions to replace the missing ones from old config system
 def list_available_backbones() -> List[str]:

@@ -7,7 +7,6 @@ import gc
 import time
 import torch
 import pytest
-import logging
 from typing import Dict, Any, Tuple
 
 # Updated imports to match new module structure
@@ -23,9 +22,10 @@ from utils.model_operation import (
     get_model_info, count_parameters, freeze_model,
     cleanup_hooks,
 )
+from logger.logger import setup_logging 
 
-# Setup logging for tests
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 # Test configuration helper functions
 def get_test_config(model_name: str = 'vit_base_patch16_224') -> Dict[str, Any]:

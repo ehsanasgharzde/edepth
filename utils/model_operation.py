@@ -5,9 +5,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import List, Dict, Any, Optional, Union, Tuple, Callable
-import logging
 
-logger = logging.getLogger(__name__)
+from logger.logger import setup_logging 
+
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 class ModelInfo:
     def __init__(self, model: nn.Module):

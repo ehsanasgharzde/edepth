@@ -9,15 +9,14 @@ import time
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List
-import logging
 
 # Import our monitoring components
 from configs.config import MonitoringConfig
 from model_integration import ModelMonitoringIntegration
+from logger.logger import setup_logging 
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 # Page configuration
 st.set_page_config(

@@ -4,11 +4,13 @@
 # ehsanasgharzde, hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import torch
-import logging
 from pathlib import Path
 from typing import Dict, Any, List
 
-logger = logging.getLogger(__name__)
+from logger.logger import setup_logging 
+
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 # Attempt to import various dataset classes; log a warning if any import fails
 try:

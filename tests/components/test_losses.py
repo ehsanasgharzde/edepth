@@ -1,12 +1,11 @@
 # FILE: tests/test_losses.py
 # ehsanasgharzde - COMPLETE LOSS FUNCTION TEST SUITE
 # hosseinsolymanzadeh - PROPER COMMENTING
-# hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
+# ehsanasgharzde - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import json
 import torch
 import pytest
-import logging
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -17,6 +16,7 @@ from losses.factory import (
     create_loss, create_combined_loss, validate_loss_config,
     register_loss, get_registered_losses, get_loss_weights_schedule,
     export_loss_configuration, integrate_with_trainer, visualize_loss_components,
+    create_loss_from_config, LossFactory, LOSS_REGISTRY
 )
 
 # Import concrete loss implementations
@@ -41,11 +41,12 @@ from utils.tensor_validation import (
 
 # Import configuration components
 from configs.config import (
-    LossType, LossConfig, Config, ConfigFactory
+    LossConfig, Config, ConfigFactory
 )
+from logger.logger import setup_logging 
 
-# Configure logging for tests
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 # Test constants
 TEST_SHAPES: List[Tuple[int, int, int, int]] = [(1, 1, 32, 32), (2, 1, 64, 64), (1, 1, 128, 128)]
@@ -369,7 +370,7 @@ def test_loss_registration() -> None:
     assert 'test_loss' in get_registered_losses()
     assert len(get_registered_losses()) == initial_count + 1
 
-@pytest.mark.parametrize('loss_name', ['SiLogLoss', 'BerHuLoss', 'RMSELoss', 'MAELoss'])
+@pytest.mark.parametrize('loss_name', ['silog', 'berhu', 'rmse', 'mae'])
 def test_create_loss_by_name(loss_name: str, dummy_data: Dict[str, Any]) -> None:
     loss_fn = create_loss(loss_name)
     
@@ -382,7 +383,7 @@ def test_create_loss_by_name(loss_name: str, dummy_data: Dict[str, Any]) -> None
 
 def test_create_loss_with_config(dummy_data: Dict[str, Any]) -> None:
     config = {'lambda_var': 0.9, 'eps': 1e-6}
-    loss_fn = create_loss('SiLogLoss', config)
+    loss_fn = create_loss('silog', config)
     
     pred = dummy_data['pred']
     target = dummy_data['target']
@@ -398,20 +399,18 @@ def test_create_loss_invalid_name() -> None:
 def test_validate_loss_config() -> None:
     # Test valid config
     config = {'lambda_var': 0.85, 'eps': 1e-7}
-    validated = validate_loss_config('SiLogLoss', config)
+    validated = validate_loss_config('silog', config)
     assert validated['lambda_var'] == 0.85
     assert validated['eps'] == 1e-7
     
-    # Test with defaults
-    config = {}
-    validated = validate_loss_config('SiLogLoss', config)
-    assert 'lambda_var' in validated
-    assert 'eps' in validated
+    # Test invalid lambda_var
+    with pytest.raises(ValueError, match="lambda_var must be in"):
+        validate_loss_config('silog', {'lambda_var': 1.5})
 
 def test_create_combined_loss(dummy_data: Dict[str, Any]) -> None:
     loss_configs = [
-        {'name': 'SiLogLoss', 'weight': 0.7, 'params': {'lambda_var': 0.85}},
-        {'name': 'RMSELoss', 'weight': 0.3, 'params': {}}
+        {'type': 'silog', 'weight': 0.7, 'params': {'lambda_var': 0.85}},
+        {'type': 'rmse', 'weight': 0.3, 'params': {}}
     ]
     
     combined_loss = create_combined_loss(loss_configs)
@@ -447,7 +446,7 @@ def test_get_loss_weights_schedule() -> None:
     assert weights['loss1'] < base_weights['loss1']  # Should decay
 
 def test_export_loss_configuration() -> None:
-    loss_fn = create_loss('SiLogLoss', {'lambda_var': 0.9})
+    loss_fn = create_loss('silog', {'lambda_var': 0.9})
     
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         export_path = f.name
@@ -472,7 +471,7 @@ def test_integrate_with_trainer() -> None:
     trainer.add_hook = Mock()
     
     loss_config = {
-        'name': 'SiLogLoss',
+        'name': 'silog',
         'config': {'lambda_var': 0.85}
     }
     
@@ -495,6 +494,41 @@ def test_visualize_loss_components() -> None:
     # Test with empty history
     with patch('matplotlib.pyplot.show'):
         visualize_loss_components({})
+
+# LossFactory tests
+def test_loss_factory_creation() -> None:
+    factory = LossFactory()
+    assert len(factory.get_available_losses()) > 0
+
+def test_loss_factory_create_by_string() -> None:
+    factory = LossFactory()
+    loss_fn = factory.create('silog')
+    assert isinstance(loss_fn, SiLogLoss)
+
+def test_loss_factory_create_by_dict() -> None:
+    factory = LossFactory()
+    config = {'type': 'silog', 'params': {'lambda_var': 0.9}}
+    loss_fn = factory.create(config)
+    assert isinstance(loss_fn, SiLogLoss)
+    assert loss_fn.lambda_var == 0.9
+
+def test_loss_factory_create_multi() -> None:
+    factory = LossFactory()
+    configs = [
+        {'type': 'silog', 'weight': 0.7, 'params': {}},
+        {'type': 'rmse', 'weight': 0.3, 'params': {}}
+    ]
+    multi_loss = factory.create_multi(configs)
+    assert isinstance(multi_loss, MultiLoss)
+    assert len(multi_loss.losses) == 2
+
+def test_loss_factory_register() -> None:
+    factory = LossFactory()
+    initial_count = len(factory.get_available_losses())
+    
+    factory.register('custom_loss', SiLogLoss)
+    assert len(factory.get_available_losses()) == initial_count + 1
+    assert 'custom_loss' in factory.get_available_losses()
 
 # Edge case tests
 def test_empty_mask_handling(edge_case_data: Dict[str, Any]) -> None:
@@ -568,16 +602,7 @@ def test_batch_size_scaling(batch_size: int) -> None:
     assert_loss_properties(loss_value)
     assert loss_value.shape == torch.Size([])  # Should be scalar
 
-# New tests for config integration
-def test_loss_config_from_enum() -> None:
-    # Test creating loss using enum from config.py
-    silog_type = LossType.SILOG
-    assert silog_type.value == "silog"
-    
-    # Create loss directly from enum value
-    loss_fn = create_loss(silog_type.value)
-    assert isinstance(loss_fn, SiLogLoss)
-
+# New tests for updated factory functionality
 def test_create_loss_from_loss_config() -> None:
     # Create a LossConfig instance
     loss_config = LossConfig(
@@ -585,12 +610,32 @@ def test_create_loss_from_loss_config() -> None:
         silog_lambda=0.9,
     )
     
-    # Create a loss from the config
-    loss_fn = create_loss(loss_config.loss_type, {'lambda_var': loss_config.silog_lambda})
+    # Test create_loss_from_config function
+    loss_fn = create_loss_from_config(loss_config)
     assert isinstance(loss_fn, SiLogLoss)
     assert loss_fn.lambda_var == 0.9
 
-def test_config_factory_for_testing() -> None:
+def test_create_loss_from_loss_config_berhu() -> None:
+    loss_config = LossConfig(
+        loss_type="berhu",
+        berhu_threshold=0.3,
+    )
+    
+    loss_fn = create_loss_from_config(loss_config)
+    assert isinstance(loss_fn, BerHuLoss)
+    assert loss_fn.threshold == 0.3
+
+def test_create_loss_from_loss_config_multi_loss() -> None:
+    loss_config = LossConfig(
+        loss_type="multi_loss",
+        loss_weights={"silog": 0.7, "rmse": 0.3}
+    )
+    
+    loss_fn = create_loss_from_config(loss_config)
+    assert isinstance(loss_fn, MultiLoss)
+    assert len(loss_fn.losses) == 2
+
+def test_config_factory_integration() -> None:
     # Create a debug config for testing
     debug_config = ConfigFactory.create_debug_config()
     
@@ -598,29 +643,37 @@ def test_config_factory_for_testing() -> None:
     loss_config = debug_config.training.loss
     
     # Create a loss using this config
-    loss_fn = create_loss(loss_config.loss_type)
+    loss_fn = create_loss_from_config(loss_config)
     
-    # Verify it's the correct type
-    expected_class = {
-        "silog": SiLogLoss,
-        "berhu": BerHuLoss,
-        "rmse": RMSELoss,
-        "mae": MAELoss,
-        "multi_scale": MultiScaleLoss,
-        "edge_aware_smoothness": EdgeAwareSmoothnessLoss,
-        "gradient_consistency": GradientConsistencyLoss,
-        "multi_loss": MultiLoss
-    }.get(loss_config.loss_type, None)
+    # Verify it's the correct type based on default silog
+    assert isinstance(loss_fn, SiLogLoss)
+
+def test_loss_registry_populated() -> None:
+    # Verify that the registry is properly populated
+    registered_losses = get_registered_losses()
     
-    if expected_class:
-        assert isinstance(loss_fn, expected_class)
+    expected_losses = [
+        'silog', 'silog_loss', 'edge_aware_smoothness', 'smoothness',
+        'gradient_consistency', 'gradient', 'multi_scale', 'multiscale',
+        'berhu', 'berhu_loss', 'rmse', 'rmse_loss', 'mae', 'mae_loss',
+        'multi_loss', 'multi'
+    ]
+    
+    for expected_loss in expected_losses:
+        assert expected_loss in registered_losses
+
+def test_loss_registry_access() -> None:
+    # Test direct registry access
+    assert 'silog' in LOSS_REGISTRY
+    assert LOSS_REGISTRY['silog'] == SiLogLoss
+    assert LOSS_REGISTRY['berhu'] == BerHuLoss
 
 # Integration tests
 def test_complete_training_workflow(dummy_data: Dict[str, Any]) -> None:
     # Setup
     loss_configs = [
-        {'name': 'SiLogLoss', 'weight': 0.7, 'params': {'lambda_var': 0.85}},
-        {'name': 'RMSELoss', 'weight': 0.3, 'params': {}}
+        {'type': 'silog', 'weight': 0.7, 'params': {'lambda_var': 0.85}},
+        {'type': 'rmse', 'weight': 0.3, 'params': {}}
     ]
     
     combined_loss = create_combined_loss(loss_configs)
@@ -661,13 +714,7 @@ def test_config_to_loss_conversion() -> None:
         loss_weights={"silog": 0.7, "rmse": 0.3}
     )
     
-    # Convert config to loss configs
-    loss_configs = [
-        {'name': 'SiLogLoss', 'weight': 0.7, 'params': {'lambda_var': config.training.loss.silog_lambda}},
-        {'name': 'RMSELoss', 'weight': 0.3, 'params': {}}
-    ]
-    
-    # Create combined loss
-    combined_loss = create_combined_loss(loss_configs)
-    assert isinstance(combined_loss, MultiLoss)
-    assert len(combined_loss.losses) == 2
+    # Convert config to loss
+    loss_fn = create_loss_from_config(config.training.loss)
+    assert isinstance(loss_fn, MultiLoss)
+    assert len(loss_fn.losses) == 2
