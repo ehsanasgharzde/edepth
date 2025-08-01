@@ -5,7 +5,6 @@
 
 import os
 import time
-import logging
 import torch
 import torch.nn as nn
 import torch.distributed as dist
@@ -21,8 +20,10 @@ from tqdm import tqdm
 
 from losses.factory import create_loss
 from metrics.factory import create_evaluator, get_all_metrics
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 class State:
     def __init__(self, config: Dict[str, Any]):

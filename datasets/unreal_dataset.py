@@ -4,15 +4,17 @@
 # ehsanasgharzde, hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import cv2
-import logging
 import numpy as np
 from pathlib import Path
 import torchvision.transforms as T
 from typing import Dict, List, Optional, Tuple, Any
 
 from utils.dataset_tools import BaseDataset
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
+
 
 class UnrealStereo4KDataset(BaseDataset):
     def __init__(self, data_root: str, split: str = 'train', img_size: Tuple[int, int] = (480, 640),

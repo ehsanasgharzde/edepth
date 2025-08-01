@@ -3,15 +3,16 @@
 # hosseinsolymanzadeh - PROPER COMMENTING
 # ehsanasgharzde, hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
-import logging
 import numpy as np
 from pathlib import Path
 import torchvision.transforms as T
 from typing import Dict, Tuple, List, Any
 
 from utils.dataset_tools import BaseDataset
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 
 class NYUV2Dataset(BaseDataset):

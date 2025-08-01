@@ -7,7 +7,6 @@ import gc
 import cv2
 import time
 import torch
-import logging
 import numpy as np
 from tqdm import tqdm
 from pathlib import Path
@@ -19,8 +18,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from models.factory import create_model, create_model_from_checkpoint
 from configs.config import Config, ConfigFactory, InferenceConfig
 from utils.config_loader import create_config_manager
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 # Create global config manager instance
 config_manager = create_config_manager()

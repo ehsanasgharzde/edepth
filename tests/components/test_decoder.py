@@ -7,7 +7,6 @@ import gc
 import torch
 import pytest
 import psutil
-import logging
 from typing import List, Tuple
 
 # Updated imports to match the new module structure
@@ -22,8 +21,10 @@ from utils.model_operation import (
     interpolate_features, get_model_info, ModelInfo, 
     count_parameters
 )
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 # Global test device configuration
 def get_test_device() -> torch.device:

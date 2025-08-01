@@ -8,10 +8,12 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-import logging
 import numpy as np
 
-logger = logging.getLogger(__name__)
+from logger.logger import setup_logging 
+
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 @dataclass
 class ModelMetrics:

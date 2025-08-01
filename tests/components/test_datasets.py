@@ -8,7 +8,6 @@ import os
 import cv2
 import torch
 import pytest
-import logging
 import tempfile
 import numpy as np
 from typing import List, Tuple
@@ -18,9 +17,10 @@ from datasets.nyu_dataset import NYUV2Dataset
 from datasets.kitti_dataset import KITTIDataset
 from datasets.enrich_dataset import ENRICHDataset
 from utils.dataset_tools import BaseDataset
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 def test_register_dataset_new() -> None:
     register_dataset("test_dataset_new", NYUV2Dataset)

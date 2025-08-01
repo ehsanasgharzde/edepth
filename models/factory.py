@@ -4,7 +4,6 @@
 
 import os
 import torch
-import logging
 import traceback
 import torch.nn as nn
 from typing import List, Optional, Dict, Any, Type
@@ -20,8 +19,10 @@ from utils.model_validation import (
 from utils.model_operation import (
     get_model_info, load_model_checkpoint,
 )
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 # Registry for custom models
 MODEL_REGISTRY: Dict[str, Type[nn.Module]] = {}

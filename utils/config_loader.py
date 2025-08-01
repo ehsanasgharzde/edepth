@@ -5,7 +5,6 @@
 
 import json
 import yaml
-import logging
 import hashlib
 import threading
 from abc import ABC, abstractmethod
@@ -15,7 +14,10 @@ from datetime import datetime
 from omegaconf import OmegaConf
 import copy
 
-logger = logging.getLogger(__name__)
+from logger.logger import setup_logging 
+
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 class ConfigError(Exception):
     pass

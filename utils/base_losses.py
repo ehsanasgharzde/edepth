@@ -4,13 +4,14 @@
 import torch
 import torch.nn as nn
 from abc import ABC, abstractmethod
-import logging
 from typing import Optional, Tuple, Dict
 import numpy as np
 
 from utils.tensor_validation import *
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 # Numerical stability epsilon
 EPS = 1e-8

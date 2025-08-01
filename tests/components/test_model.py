@@ -6,7 +6,6 @@
 import time
 import torch
 import pytest
-import logging
 import torch.nn as nn
 from typing import Callable, Dict, Any, List, Tuple
 
@@ -27,8 +26,10 @@ from utils.model_validation import (
 from configs.config import (
     ModelConfig, BackboneType, ConfigFactory, ConfigPresets
 )
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 def test_model_creation_basic() -> None:
     # Test basic model creation with default parameters

@@ -7,12 +7,13 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Tuple, Optional, Dict, Any
 from pathlib import Path
 from enum import Enum
-import logging
 from abc import ABC
 import copy
 import os
 
-logger = logging.getLogger(__name__)
+from logger.logger import setup_logging 
+
+logger = setup_logging(__file__)
 
 class ConfigError(Exception):
     pass

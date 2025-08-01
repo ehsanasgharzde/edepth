@@ -1,12 +1,13 @@
 # FILE: metrics/factory.py
 # hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
-import logging
 from typing import Dict, Callable, List, Optional
 
 from .metrics import METRICS
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 def get_metric(name: str) -> Callable:
     # Get a metric function by name.

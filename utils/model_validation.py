@@ -3,9 +3,11 @@
 
 import torch
 from typing import List, Optional, Tuple
-import logging
 
-logger = logging.getLogger(__name__)
+from logger.logger import setup_logging 
+
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 class ModelValidationError(ValueError):
     pass

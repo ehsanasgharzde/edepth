@@ -5,7 +5,6 @@
 
 import torch
 import torch.nn as nn
-import logging
 from typing import List, Tuple
 
 # Import centralized utilities
@@ -16,8 +15,10 @@ from utils.model_validation import (
 from utils.model_operation import (
     interpolate_features, initialize_weights, ModelInfo, get_model_info 
 )
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 class FusionBlock(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, scale_factor: int = 2, use_attention: bool = False):

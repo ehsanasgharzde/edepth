@@ -5,14 +5,16 @@
 
 import os
 import glob
-import logging
 import numpy as np
 import torchvision.transforms as T
 from typing import List, Dict, Optional, Tuple, Any
 
 from utils.dataset_tools import BaseDataset 
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
+
 
 class KITTIDataset(BaseDataset):
     def __init__(self, data_root: str, split: str = 'train', img_size: Tuple[int, int] = (352, 1216),

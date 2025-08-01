@@ -3,13 +3,14 @@
 # hosseinsolymanzadeh - FIXED REDUNDANT CODE BY EXTRACTING PURE FUNCTIONS AND BASECLASS LEVEL METHODS
 
 import torch
-import logging
 import numpy as np
 from typing import Optional, Tuple, Union, List, Dict
 
 from utils.tensor_validation import create_default_mask, apply_mask_safely, validate_tensor_inputs
+from logger.logger import setup_logging 
 
-logger = logging.getLogger(__name__)
+# Setup logger for factory operations
+logger = setup_logging(__file__)
 
 # Configuration constants
 EPS = 1e-6
